@@ -1,12 +1,14 @@
-import math
 import colorsys
+import math
 import random
-from .correct import Correct
 from enum import Enum
+
 import matplotlib.pyplot as plt
 from numba import jit
-from .constants import *
 from scipy.ndimage import convolve, gaussian_filter1d
+
+from .constants import *
+from .correct import Correct
 
 
 class Line:
@@ -74,7 +76,10 @@ class Line:
     def estimate_length(self):
         length = 0
         for i in range(1, self.num):
-            length += ((self.col[i] - self.col[i - 1]) ** 2 + (self.row[i] - self.row[i - 1]) ** 2) ** 0.5
+            length += (
+                (self.col[i] - self.col[i - 1]) ** 2
+                + (self.row[i] - self.row[i - 1]) ** 2
+            ) ** 0.5
         return length
 
     @classmethod
@@ -118,32 +123,53 @@ class LinesUtil:
 
     @staticmethod
     def BR(row, height):
-        return np.abs(row) if row < 0 else (height - row + height - 2) if row >= height else row
+        return (
+            np.abs(row)
+            if row < 0
+            else (height - row + height - 2)
+            if row >= height
+            else row
+        )
 
     @staticmethod
     def BC(col, width):
-        return np.abs(col) if col < 0 else (width - col + width - 2) if col >= width else col
+        return (
+            np.abs(col)
+            if col < 0
+            else (width - col + width - 2)
+            if col >= width
+            else col
+        )
 
     class ContourClass(Enum):
         # The cont no junc
-        cont_no_junc = 1,
+        cont_no_junc = (1,)
         # The cont start junc
         # no end point is a junction
-        cont_start_junc = 2,
+        cont_start_junc = (2,)
         # The cont end junc.
         # only the start point of the line is a junction
-        cont_end_junc = 3,
+        cont_end_junc = (3,)
         # The cont both junc.
         # only the end point of the line is a junction
-        cont_both_junc = 4,
+        cont_both_junc = (4,)
         # The cont closed.
         # both end points of the line are junctions
         cont_closed = 5  # the contour is closed
 
 
 class Junction:
-    def __init__(self, cont1=-1, cont2=-1, pos=0, y=0.0, x=0.0,
-                 line_cont1=None, line_cont2=None, is_non_terminal=False):
+    def __init__(
+        self,
+        cont1=-1,
+        cont2=-1,
+        pos=0,
+        y=0.0,
+        x=0.0,
+        line_cont1=None,
+        line_cont2=None,
+        is_non_terminal=False,
+    ):
         self.cont1 = cont1
         self.cont2 = cont2
         self.pos = pos
@@ -169,7 +195,7 @@ class Normal:
     P10 = 242.66795523053175
     P11 = 21.979261618294152
     P12 = 6.9963834886191355
-    P13 = -.035609843701815385
+    P13 = -0.035609843701815385
 
     Q10 = 215.05887586986120
     Q11 = 91.164905404514901
@@ -182,8 +208,8 @@ class Normal:
     P23 = 152.9892850469404039
     P24 = 43.16222722205673530
     P25 = 7.211758250883093659
-    P26 = .5641955174789739711
-    P27 = -.0000001368648573827167067
+    P26 = 0.5641955174789739711
+    P27 = -0.0000001368648573827167067
 
     Q20 = 300.4592609569832933
     Q21 = 790.9509253278980272
@@ -194,14 +220,14 @@ class Normal:
     Q26 = 12.78272731962942351
     Q27 = 1.0
 
-    P30 = -.00299610707703542174
-    P31 = -.0494730910623250734
-    P32 = -.226956593539686930
-    P33 = -.278661308609647788
-    P34 = -.0223192459734184686
+    P30 = -0.00299610707703542174
+    P31 = -0.0494730910623250734
+    P32 = -0.226956593539686930
+    P33 = -0.278661308609647788
+    P34 = -0.0223192459734184686
 
-    Q30 = .0106209230528467918
-    Q31 = .191308926107829841
+    Q30 = 0.0106209230528467918
+    Q31 = 0.191308926107829841
     Q32 = 1.05167510706793207
     Q33 = 1.98733201817135256
     Q34 = 1.0
@@ -237,8 +263,26 @@ class Normal:
             y3 = y2 * y
             y5 = y4 * y
             y7 = y6 * y
-            R1 = Normal.P20 + Normal.P21 * y + Normal.P22 * y2 + Normal.P23 * y3 + Normal.P24 * y4 + Normal.P25 * y5 + Normal.P26 * y6 + Normal.P27 * y7
-            R2 = Normal.Q20 + Normal.Q21 * y + Normal.Q22 * y2 + Normal.Q23 * y3 + Normal.Q24 * y4 + Normal.Q25 * y5 + Normal.Q26 * y6 + Normal.Q27 * y7
+            R1 = (
+                Normal.P20
+                + Normal.P21 * y
+                + Normal.P22 * y2
+                + Normal.P23 * y3
+                + Normal.P24 * y4
+                + Normal.P25 * y5
+                + Normal.P26 * y6
+                + Normal.P27 * y7
+            )
+            R2 = (
+                Normal.Q20
+                + Normal.Q21 * y
+                + Normal.Q22 * y2
+                + Normal.Q23 * y3
+                + Normal.Q24 * y4
+                + Normal.Q25 * y5
+                + Normal.Q26 * y6
+                + Normal.Q27 * y7
+            )
             erfc = np.exp(-y2) * R1 / R2
             if sn == 1:
                 phi = 1.0 - 0.5 * erfc
@@ -249,8 +293,20 @@ class Normal:
             z2 = z * z
             z3 = z2 * z
             z4 = z2 * z2
-            R1 = Normal.P30 + Normal.P31 * z + Normal.P32 * z2 + Normal.P33 * z3 + Normal.P34 * z4
-            R2 = Normal.Q30 + Normal.Q31 * z + Normal.Q32 * z2 + Normal.Q33 * z3 + Normal.Q34 * z4
+            R1 = (
+                Normal.P30
+                + Normal.P31 * z
+                + Normal.P32 * z2
+                + Normal.P33 * z3
+                + Normal.P34 * z4
+            )
+            R2 = (
+                Normal.Q30
+                + Normal.Q31 * z
+                + Normal.Q32 * z2
+                + Normal.Q33 * z3
+                + Normal.Q34 * z4
+            )
             erfc = (np.exp(-y2) / y) * (1.0 / Normal.SQRTPI + R1 / (R2 * y2))
             if sn == 1:
                 phi = 1.0 - 0.5 * erfc
@@ -271,7 +327,7 @@ def phi1(x, sigma):
 
 def phi2(x, sigma):
     t = x / sigma
-    return -x * Normal.SQRT_2_PI_INV / (sigma ** 3.0) * np.exp(-0.5 * t * t)
+    return -x * Normal.SQRT_2_PI_INV / (sigma**3.0) * np.exp(-0.5 * t * t)
 
 
 def compute_gauss_mask_0(sigma):
@@ -324,7 +380,11 @@ def convolve_gauss(image, sigma, deriv_type):
         hr, nr = compute_gauss_mask_0(sigma)
         hc, nc = compute_gauss_mask_2(sigma)
 
-    return convolve(convolve(image, hr.reshape(-1, 1), mode='nearest'), hc.reshape(1, -1), mode='nearest')
+    return convolve(
+        convolve(image, hr.reshape(-1, 1), mode="nearest"),
+        hc.reshape(1, -1),
+        mode="nearest",
+    )
 
 
 def normalize(x, pmin=2, pmax=98, axis=None, eps=1e-20, dtype=np.float32):
@@ -349,7 +409,7 @@ def closest_point(ly, lx, dy, dx, py, px):
     mx = px - lx
     den = dy * dy + dx * dx
     nom = my * dy + mx * dx
-    tt = nom/den if den != 0 else 0
+    tt = nom / den if den != 0 else 0
     return ly + tt * dy, lx + tt * dx, tt
 
 
@@ -450,7 +510,12 @@ def fill_gaps(master, slave1, slave2, cont):
                 if slave2 is not None:
                     s2_s, s2_e = slave2[s - 1], slave2[e + 1]
 
-            arc_len = np.sum(np.sqrt(np.diff(cont.row[s:e + 2]) ** 2 + np.diff(cont.col[s:e + 2]) ** 2))
+            arc_len = np.sum(
+                np.sqrt(
+                    np.diff(cont.row[s : e + 2]) ** 2
+                    + np.diff(cont.col[s : e + 2]) ** 2
+                )
+            )
             if arc_len != 0.0:
                 len_ = 0
                 for k in range(s, e + 1):
@@ -459,9 +524,13 @@ def fill_gaps(master, slave1, slave2, cont):
                     len_ += np.sqrt(d_r * d_r + d_c * d_c)
                     master[k] = (arc_len - len_) / arc_len * m_s + len_ / arc_len * m_e
                     if slave1 is not None:
-                        slave1[k] = (arc_len - len_) / arc_len * s1_s + len_ / arc_len * s1_e
+                        slave1[k] = (
+                            arc_len - len_
+                        ) / arc_len * s1_s + len_ / arc_len * s1_e
                     if slave2 is not None:
-                        slave2[k] = (arc_len - len_) / arc_len * s2_s + len_ / arc_len * s2_e
+                        slave2[k] = (
+                            arc_len - len_
+                        ) / arc_len * s2_s + len_ / arc_len * s2_e
             i = j
         else:
             i += 1
@@ -477,15 +546,31 @@ def normalize_to_half_circle(angle):
 
 
 def interpolate_response(resp, x, y, px, py, width, height):
-    i1 = resp[LinesUtil.LINCOOR(LinesUtil.BR(x - 1, height), LinesUtil.BC(y - 1, width), width)]
+    i1 = resp[
+        LinesUtil.LINCOOR(
+            LinesUtil.BR(x - 1, height), LinesUtil.BC(y - 1, width), width
+        )
+    ]
     i2 = resp[LinesUtil.LINCOOR(LinesUtil.BR(x - 1, height), y, width)]
-    i3 = resp[LinesUtil.LINCOOR(LinesUtil.BR(x - 1, height), LinesUtil.BC(y + 1, width), width)]
+    i3 = resp[
+        LinesUtil.LINCOOR(
+            LinesUtil.BR(x - 1, height), LinesUtil.BC(y + 1, width), width
+        )
+    ]
     i4 = resp[LinesUtil.LINCOOR(x, LinesUtil.BC(y - 1, width), width)]
     i5 = resp[LinesUtil.LINCOOR(x, y, width)]
     i6 = resp[LinesUtil.LINCOOR(x, LinesUtil.BC(y + 1, width), width)]
-    i7 = resp[LinesUtil.LINCOOR(LinesUtil.BR(x + 1, height), LinesUtil.BC(y - 1, width), width)]
+    i7 = resp[
+        LinesUtil.LINCOOR(
+            LinesUtil.BR(x + 1, height), LinesUtil.BC(y - 1, width), width
+        )
+    ]
     i8 = resp[LinesUtil.LINCOOR(LinesUtil.BR(x + 1, height), y, width)]
-    i9 = resp[LinesUtil.LINCOOR(LinesUtil.BR(x + 1, height), LinesUtil.BC(y + 1, width), width)]
+    i9 = resp[
+        LinesUtil.LINCOOR(
+            LinesUtil.BR(x + 1, height), LinesUtil.BC(y + 1, width), width
+        )
+    ]
     t1 = i1 + i2 + i3
     t2 = i4 + i5 + i6
     t3 = i7 + i8 + i9
@@ -500,7 +585,7 @@ def interpolate_response(resp, x, y, px, py, width, height):
     drc = (i1 - i3 - i7 + i9) / 4
     xx = px - x
     yy = py - y
-    return d + xx * dr + yy * dc + xx ** 2 * drr + xx * yy * drc + yy ** 2 * dcc
+    return d + xx * dr + yy * dc + xx**2 * drr + xx * yy * drc + yy**2 * dcc
 
 
 def interpolate_gradient(gradx, grady, px, py, width):
@@ -523,8 +608,18 @@ def interpolate_gradient(gradx, grady, px, py, width):
     return gx, gy
 
 
-def fix_locations(cont, width_l, width_r, grad_l, grad_r, pos_y, pos_x, sigma_map,
-                  correct_pos=True, mode=LinesUtil.MODE_DARK):
+def fix_locations(
+    cont,
+    width_l,
+    width_r,
+    grad_l,
+    grad_r,
+    pos_y,
+    pos_x,
+    sigma_map,
+    correct_pos=True,
+    mode=LinesUtil.MODE_DARK,
+):
     num_points = cont.num
     correction = np.zeros(num_points, dtype=float)
     asymm = np.zeros(num_points, dtype=float)
@@ -536,19 +631,21 @@ def fix_locations(cont, width_l, width_r, grad_l, grad_r, pos_y, pos_x, sigma_ma
     # Correct positions if required
     if correct_pos:
         correct_start = (
-                (cont.cont_class in [
-                    LinesUtil.ContourClass.cont_no_junc,
-                    LinesUtil.ContourClass.cont_end_junc,
-                    LinesUtil.ContourClass.cont_closed
-                ]) and (width_r[0] > 0 and width_l[0] > 0)
-        )
+            cont.cont_class
+            in [
+                LinesUtil.ContourClass.cont_no_junc,
+                LinesUtil.ContourClass.cont_end_junc,
+                LinesUtil.ContourClass.cont_closed,
+            ]
+        ) and (width_r[0] > 0 and width_l[0] > 0)
         correct_end = (
-                (cont.cont_class in [
-                    LinesUtil.ContourClass.cont_no_junc,
-                    LinesUtil.ContourClass.cont_start_junc,
-                    LinesUtil.ContourClass.cont_closed
-                ]) and (width_r[-1] > 0 and width_l[-1] > 0)
-        )
+            cont.cont_class
+            in [
+                LinesUtil.ContourClass.cont_no_junc,
+                LinesUtil.ContourClass.cont_start_junc,
+                LinesUtil.ContourClass.cont_closed,
+            ]
+        ) and (width_r[-1] > 0 and width_l[-1] > 0)
 
         for i in range(num_points):
             if width_r[i] > 0 and width_l[i] > 0:
@@ -561,7 +658,8 @@ def fix_locations(cont, width_l, width_r, grad_l, grad_r, pos_y, pos_x, sigma_ma
                     weak_is_r = False
                 sigma = sigma_map[int(cont.row[i]), int(cont.col[i])]
                 w_real, h_real, corr, w_strong, w_weak = Correct.line_corrections(
-                    sigma, w_est, r_est)
+                    sigma, w_est, r_est
+                )
                 w_real /= LINE_WIDTH_COMPENSATION
                 corr /= LINE_WIDTH_COMPENSATION
                 width_r[i], width_l[i] = w_real, w_real
@@ -588,8 +686,8 @@ def fix_locations(cont, width_l, width_r, grad_l, grad_r, pos_y, pos_x, sigma_ma
             pos_y[i], pos_x[i] = py, px
 
     # Update position of line and add extracted width
-    width_l = gaussian_filter1d(width_l, 3.0, mode='mirror')
-    width_r = gaussian_filter1d(width_r, 3.0, mode='mirror')
+    width_l = gaussian_filter1d(width_l, 3.0, mode="mirror")
+    width_r = gaussian_filter1d(width_r, 3.0, mode="mirror")
     cont.width_l = np.array([float(w) for w in width_l])
     cont.width_r = np.array([float(w) for w in width_r])
     cont.row = np.array([float(y) for y in pos_y])
@@ -626,9 +724,14 @@ def visualize(gray, mag, ny, nx, saliency, gd=5):
     S = np.zeros_like(mag)
     S[row_idx, col_idx] = mag[row_idx, col_idx]
 
-    axes[1, 1].quiver(X[::gd, ::gd], Y[::gd, ::gd],
-                      (S * nx)[::gd, ::gd],
-                      (S * ny)[::gd, ::gd], angles='xy', scale=100)
+    axes[1, 1].quiver(
+        X[::gd, ::gd],
+        Y[::gd, ::gd],
+        (S * nx)[::gd, ::gd],
+        (S * ny)[::gd, ::gd],
+        angles="xy",
+        scale=100,
+    )
 
     fig.colorbar(h00, ax=axes[0, 0])
     fig.colorbar(h01, ax=axes[0, 1])

@@ -1,6 +1,21 @@
-.idea/*
-/ridge_detector/__pycache__/
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
 
-/*.egg*/
-/build/
-/dist/
+# Virtual environment
+.venv/
+
+# Distribution / packaging
+*.egg*/
+build/
+dist/
+
+# Tools
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.ruff_cache/
+
+# IDE files
+.idea/*

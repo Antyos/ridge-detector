@@ -8,13 +8,28 @@ dynamic = ["version"]
 description = "A multi-scale ridge detector for identifying curvilinear structures in images"
 readme = "README.md"
 license = "MIT"
+requires-python = ">=3.8"
 authors = [
     { name = "Gavin Lin", email = "lxfhfut@gmail.com" },
+]
+dependencies = [
+    "numpy>=1.19.0",
+    "opencv-python>=4.5.0",
+    "imageio>=2.9.0",
+    "scikit-image>=0.17.0",
+    "matplotlib>=3.3.0",
+    "scipy>=1.5.0",
+    "numba>=0.50.0",
 ]
 classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
 ]
 
 [project.urls]

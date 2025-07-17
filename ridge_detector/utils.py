@@ -4,10 +4,11 @@ import random
 from enum import Enum
 
 import matplotlib.pyplot as plt
+import numpy as np
 from numba import jit
 from scipy.ndimage import convolve, gaussian_filter1d
 
-from .constants import *
+from .constants import LINE_WIDTH_COMPENSATION
 from .correct import Correct
 
 
@@ -376,7 +377,7 @@ def convolve_gauss(image, sigma, deriv_type):
     elif deriv_type == LinesUtil.DERIV_RC:
         hr, nr = compute_gauss_mask_1(sigma)
         hc, nc = compute_gauss_mask_1(sigma)
-    elif LinesUtil.DERIV_CC:
+    else:
         hr, nr = compute_gauss_mask_0(sigma)
         hc, nc = compute_gauss_mask_2(sigma)
 

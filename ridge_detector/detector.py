@@ -3,10 +3,20 @@ import os
 import cv2
 import imageio.v3 as iio
 import matplotlib.pyplot as plt
+import numpy as np
 import skimage as ski
 from scipy.ndimage import convolve
 
-from ridge_detector.constants import *
+from ridge_detector.constants import (
+    cleartab,
+    dirtab,
+    kernel_c,
+    kernel_cc,
+    kernel_d,
+    kernel_r,
+    kernel_rc,
+    kernel_rr,
+)
 from ridge_detector.utils import (
     Crossref,
     Junction,

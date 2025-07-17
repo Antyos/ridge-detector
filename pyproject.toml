@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ridge-detector"
+dynamic = ["version"]
+description = "A multi-scale ridge detector for identifying curvilinear structures in images"
+readme = "README.md"
+license = "MIT"
+authors = [
+    { name = "Gavin Lin", email = "lxfhfut@gmail.com" },
+]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+]
+
+[project.urls]
+Homepage = "https://github.com/lxfhfut/ridge-detector.git"
+
+[tool.hatch.version]
+path = "ridge_detector/__init__.py"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/ridge_detector",
+]

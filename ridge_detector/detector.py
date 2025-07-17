@@ -1,4 +1,5 @@
 import os
+from dataclasses import dataclass
 from typing import Optional
 
 import cv2
@@ -35,6 +36,34 @@ from ridge_detector.utils import (
 )
 
 
+@dataclass
+class FilteredData:
+    derivatives: NDArray[np.floating]
+    lower_thresh: NDArray[np.floating]
+    upper_thresh: NDArray[np.floating]
+    eigvals: NDArray[np.floating]
+    eigvecs: NDArray[np.floating]
+    gradx: NDArray[np.floating]
+    grady: NDArray[np.floating]
+    sigma_map: NDArray[np.floating]
+
+
+class LinePoints:
+    normx: NDArray[np.floating]
+    normy: NDArray[np.floating]
+    posx: NDArray[np.floating]
+    posy: NDArray[np.floating]
+    ismax: NDArray[np.integer]
+
+    def __init__(self, shape: tuple[int, ...]):
+        self.ismax = np.zeros(shape, dtype=int)
+        self.eigval = np.zeros(shape, dtype=float)
+        self.normx = np.zeros(shape, dtype=float)
+        self.normy = np.zeros(shape, dtype=float)
+        self.posx = np.zeros(shape, dtype=float)
+        self.posy = np.zeros(shape, dtype=float)
+
+
 class RidgeData:
     """Data structure to hold all ridge detection state and results."""
 
@@ -42,23 +71,8 @@ class RidgeData:
     image: NDArray[np.uint8]
     gray: NDArray[np.uint8]
 
-    # Computed data from filtering
-    derivatives: NDArray[np.floating]
-    lower_thresh: Optional[NDArray] = None
-    upper_thresh: Optional[NDArray] = None
-    eigvals: Optional[NDArray] = None
-    eigvecs: Optional[NDArray] = None
-    eigval: NDArray[np.floating]
-    gradx: Optional[NDArray] = None
-    grady: Optional[NDArray] = None
-    sigma_map: Optional[NDArray] = None
-
     # Line point computation results
-    normx: NDArray[np.floating]
-    normy: NDArray[np.floating]
-    posx: NDArray[np.floating]
-    posy: NDArray[np.floating]
-    ismax: NDArray[np.integer]
+    eigval: NDArray[np.floating]
 
     # Contour detection results
     contours: list
@@ -80,16 +94,13 @@ class RidgeData:
             else self.image
         ).astype(np.uint8)
 
-        shape = (self.height, self.width)
-        self.derivatives = np.zeros((5, self.height, self.width), dtype=float)
-        self.ismax = np.zeros(shape, dtype=int)
-        self.eigval = np.zeros(shape, dtype=float)
-        self.normx = np.zeros(shape, dtype=float)
-        self.normy = np.zeros(shape, dtype=float)
-        self.posx = np.zeros(shape, dtype=float)
-        self.posy = np.zeros(shape, dtype=float)
         self.contours = []
         self.junctions = []
+
+    @property
+    def shape(self):
+        """Return (height, width) of the image."""
+        return self.gray.shape[:2]
 
     @property
     def width(self):
@@ -139,11 +150,11 @@ class RidgeDetector:
         self.data = None
         self.mode = LinesUtil.MODE_DARK if self.dark_line else LinesUtil.MODE_LIGHT
 
-    def apply_filtering(self):
-        if self.data is None:
+    def apply_filtering(self, data: RidgeData) -> FilteredData:
+        if data is None:
             raise ValueError("Ridge data is not initialized.")
-        width = self.data.width
-        height = self.data.height
+        width = data.width
+        height = data.height
         num_scales = len(self.sigmas)
         saliency = np.zeros((height, width, num_scales), dtype=float)
         orientation = np.zeros((height, width, 2, num_scales), dtype=float)
@@ -159,7 +170,7 @@ class RidgeDetector:
         sigma_maps = np.zeros((height, width, num_scales), dtype=float)
 
         # Filtering at different scales
-        gray = self.data.gray.astype(float)
+        gray = data.gray.astype(float)
         for scale_idx, sigma in enumerate(self.sigmas):
             ry = convolve_gauss(gray, sigma, LinesUtil.DERIV_R)
             rx = convolve_gauss(gray, sigma, LinesUtil.DERIV_C)
@@ -216,97 +227,100 @@ class RidgeDetector:
 
         # Get the scale index of the maximum saliency and the corresponding derivatives and thresholds
         global_max_idx = saliency.argsort()[..., -1]
-        self.data.lower_thresh = np.squeeze(
-            np.take_along_axis(low_threshs, global_max_idx[:, :, None], axis=-1)
+        derivatives = np.array(
+            [
+                np.squeeze(
+                    np.take_along_axis(rys, global_max_idx[:, :, None], axis=-1)
+                ),
+                np.squeeze(
+                    np.take_along_axis(rxs, global_max_idx[:, :, None], axis=-1)
+                ),
+                np.squeeze(
+                    np.take_along_axis(ryys, global_max_idx[:, :, None], axis=-1)
+                ),
+                np.squeeze(
+                    np.take_along_axis(rxys, global_max_idx[:, :, None], axis=-1)
+                ),
+                np.squeeze(
+                    np.take_along_axis(rxxs, global_max_idx[:, :, None], axis=-1)
+                ),
+            ]
         )
-        self.data.upper_thresh = np.squeeze(
-            np.take_along_axis(high_threshs, global_max_idx[:, :, None], axis=-1)
-        )
-        self.data.sigma_map = np.squeeze(
-            np.take_along_axis(sigma_maps, global_max_idx[:, :, None], axis=-1)
+        return FilteredData(
+            lower_thresh=np.squeeze(
+                np.take_along_axis(low_threshs, global_max_idx[:, :, None], axis=-1)
+            ),
+            upper_thresh=np.squeeze(
+                np.take_along_axis(high_threshs, global_max_idx[:, :, None], axis=-1)
+            ),
+            sigma_map=np.squeeze(
+                np.take_along_axis(sigma_maps, global_max_idx[:, :, None], axis=-1)
+            ),
+            derivatives=derivatives,
+            grady=derivatives[0, ...],
+            gradx=derivatives[1, ...],
+            eigvals=np.take_along_axis(saliency, global_max_idx[:, :, None], axis=-1),
+            eigvecs=np.take_along_axis(
+                orientation, global_max_idx[:, :, None, None], axis=-1
+            ),
         )
 
-        self.data.derivatives[0, ...] = np.squeeze(
-            np.take_along_axis(rys, global_max_idx[:, :, None], axis=-1)
-        )
-        self.data.derivatives[1, ...] = np.squeeze(
-            np.take_along_axis(rxs, global_max_idx[:, :, None], axis=-1)
-        )
-        self.data.derivatives[2, ...] = np.squeeze(
-            np.take_along_axis(ryys, global_max_idx[:, :, None], axis=-1)
-        )
-        self.data.derivatives[3, ...] = np.squeeze(
-            np.take_along_axis(rxys, global_max_idx[:, :, None], axis=-1)
-        )
-        self.data.derivatives[4, ...] = np.squeeze(
-            np.take_along_axis(rxxs, global_max_idx[:, :, None], axis=-1)
-        )
-
-        self.data.grady = self.data.derivatives[0, ...]
-        self.data.gradx = self.data.derivatives[1, ...]
-
-        self.data.eigvals = np.take_along_axis(
-            saliency, global_max_idx[:, :, None], axis=-1
-        )
-        self.data.eigvecs = np.take_along_axis(
-            orientation, global_max_idx[:, :, None, None], axis=-1
-        )
-
-    def compute_line_points(self):
+    def compute_line_points(self, filtered_data: FilteredData) -> LinePoints:
         if self.data is None:
             raise ValueError("Ridge data is not initialized.")
-        if self.data.eigvals is None or self.data.eigvecs is None:
-            raise ValueError("Eigenvalues or eigenvectors have not been calculated.")
-        ry = self.data.derivatives[0, ...]
-        rx = self.data.derivatives[1, ...]
-        ryy = self.data.derivatives[2, ...]
-        rxy = self.data.derivatives[3, ...]
-        rxx = self.data.derivatives[4, ...]
+        ry = filtered_data.grady
+        rx = filtered_data.gradx
+        ryy = filtered_data.derivatives[2, ...]
+        rxy = filtered_data.derivatives[3, ...]
+        rxx = filtered_data.derivatives[4, ...]
 
         val = (
-            self.data.eigvals[:, :, 0]
+            filtered_data.eigvals[:, :, 0]
             if self.mode == LinesUtil.MODE_DARK
-            else -self.data.eigvals[:, :, 0]
+            else -filtered_data.eigvals[:, :, 0]
         )
         val_mask = val > 0.0
         self.data.eigval[val_mask] = val[val_mask]
 
         # Equations (22) and (23) in
         # Steger, C. (1998). An unbiased detector of curvilinear structures. (DOI: 10.1109/34.659930)
-        nx_ = self.data.eigvecs[..., 1, 0]
-        ny_ = self.data.eigvecs[..., 0, 0]
-        numerator = ry * ny_ + rx * nx_
-        denominator = ryy * ny_**2 + 2.0 * rxy * nx_ * ny_ + rxx * nx_**2
+        nx = filtered_data.eigvecs[..., 1, 0]
+        ny = filtered_data.eigvecs[..., 0, 0]
+        numerator = (ry * ny) + (rx * nx)
+        denominator = (ryy * ny**2) + (2.0 * rxy * nx * ny) + (rxx * nx**2)
 
         # The minus sign in Eq. (23) is ignored to follow the logic of detecting black ridges in white background
         t = numerator / (denominator + np.finfo(float).eps)
-        py_ = t * ny_
-        px_ = t * nx_
+        py = t * ny
+        px = t * nx
 
-        bnd_mask = (abs(py_) <= PIXEL_BOUNDARY) & (abs(px_) <= PIXEL_BOUNDARY)
+        bnd_mask = (abs(py) <= PIXEL_BOUNDARY) & (abs(px) <= PIXEL_BOUNDARY)
         base_mask = val_mask & bnd_mask
-        upper_mask = base_mask & (val >= self.data.upper_thresh)
+        upper_mask = base_mask & (val >= filtered_data.upper_thresh)
         lower_mask = (
-            base_mask & (val >= self.data.lower_thresh) & (val < self.data.upper_thresh)
+            base_mask
+            & (val >= filtered_data.lower_thresh)
+            & (val < filtered_data.upper_thresh)
         )
-        self.data.ismax[upper_mask] = 2
-        self.data.ismax[lower_mask] = 1
 
-        self.data.normy[base_mask] = ny_[base_mask]
-        self.data.normx[base_mask] = nx_[base_mask]
+        line_data = LinePoints(self.data.shape)
+        line_data.ismax[upper_mask] = 2
+        line_data.ismax[lower_mask] = 1
+
+        line_data.normy[base_mask] = ny[base_mask]
+        line_data.normx[base_mask] = nx[base_mask]
         Y, X = np.mgrid[: self.data.height, : self.data.width]
-        self.data.posy[base_mask] = Y[base_mask] + py_[base_mask]
-        self.data.posx[base_mask] = X[base_mask] + px_[base_mask]
+        line_data.posy[base_mask] = Y[base_mask] + py[base_mask]
+        line_data.posx[base_mask] = X[base_mask] + px[base_mask]
+        return line_data
 
-    def extend_lines(self, label):
+    def extend_lines(self, label, filtered_data: FilteredData):
         if self.data is None:
             raise ValueError("Ridge data is not initialized.")
-        if self.data.sigma_map is None:
-            raise ValueError("sigma_map has not been calculated.")
         height, width = label.shape[:2]
         num_junc = len(self.data.junctions)
         s = 1 if self.mode == LinesUtil.MODE_DARK else -1
-        length = 2.5 * self.data.sigma_map
+        length = 2.5 * filtered_data.sigma_map
         max_line = np.ceil(length * 1.2).astype(int)
         num_cont = len(self.data.contours)
         for idx_cont in range(num_cont):
@@ -410,7 +424,7 @@ class RidgeDetector:
                     ):
                         break
                     gy, gx = interpolate_gradient_test(
-                        self.data.grady, self.data.gradx, nextpy, nextpx
+                        filtered_data.grady, filtered_data.gradx, nextpy, nextpx
                     )
 
                     # Stop if we can't go uphill anymore.
@@ -538,12 +552,11 @@ class RidgeDetector:
                             )
 
                         num_junc += 1
+            return junctions
 
-    def compute_contours(self):
+    def compute_contours(self, filtered_data: FilteredData, line_points: LinePoints):
         if self.data is None:
             raise ValueError("Ridge data is not initialized.")
-        if self.data.posy is None or self.data.posx is None:
-            raise ValueError("Position data has not been calculated.")
         width = self.data.width
         height = self.data.height
         label = np.zeros((height, width), dtype=int)
@@ -555,7 +568,7 @@ class RidgeDetector:
         area = 0
         for r_idx in range(height):
             for c_idx in range(width):
-                if self.data.ismax[r_idx, c_idx] >= 2:
+                if line_points.ismax[r_idx, c_idx] >= 2:
                     area += 1
                     cross.append(
                         Crossref(r_idx, c_idx, self.data.eigval[r_idx, c_idx], False)
@@ -602,8 +615,8 @@ class RidgeDetector:
             # Select line direction
             row.append(maxy)
             col.append(maxx)
-            nx = -self.data.normx[maxy, maxx]
-            ny = self.data.normy[maxy, maxx]
+            nx = -line_points.normx[maxy, maxx]
+            ny = line_points.normy[maxy, maxx]
             alpha = normalize_to_half_circle(np.arctan2(ny, nx))
             octant = int(np.floor(4.0 / np.pi * alpha + 0.5)) % 4
 
@@ -617,8 +630,8 @@ class RidgeDetector:
             if beta >= 2.0 * np.pi:
                 beta -= 2.0 * np.pi
             angle.append(beta)
-            yy = self.data.posy[maxy, maxx] - maxy
-            xx = self.data.posx[maxy, maxx] - maxx
+            yy = line_points.posy[maxy, maxx] - maxy
+            xx = line_points.posx[maxy, maxx] - maxx
             interpolated_response = (
                 resp_dd[maxy, maxx]
                 + yy * resp_dr[maxy, maxx]
@@ -636,9 +649,9 @@ class RidgeDetector:
                 nextx = maxx + cleartab[octant][ni][1]
                 if nexty < 0 or nexty >= height or nextx < 0 or nextx >= width:
                     continue
-                if self.data.ismax[nexty, nextx] > 0:
-                    nx = -self.data.normx[nexty, nextx]
-                    ny = self.data.normy[nexty, nextx]
+                if line_points.ismax[nexty, nextx] > 0:
+                    nx = -line_points.normx[nexty, nextx]
+                    ny = line_points.normy[nexty, nextx]
                     nextalpha = normalize_to_half_circle(np.arctan2(ny, nx))
                     diff = abs(alpha - nextalpha)
                     if diff >= np.pi / 2.0:
@@ -650,7 +663,7 @@ class RidgeDetector:
 
             for it in range(1, 3):
                 y, x = maxy, maxx
-                ny, nx = self.data.normy[y, x], -self.data.normx[y, x]
+                ny, nx = line_points.normy[y, x], -line_points.normx[y, x]
 
                 alpha = normalize_to_half_circle(np.arctan2(ny, nx))
                 last_octant = (
@@ -670,8 +683,8 @@ class RidgeDetector:
                     resp.reverse()
 
                 while True:
-                    ny, nx = self.data.normy[y, x], -self.data.normx[y, x]
-                    py, px = self.data.posy[y, x], self.data.posx[y, x]
+                    ny, nx = line_points.normy[y, x], -line_points.normx[y, x]
+                    py, px = line_points.posy[y, x], line_points.posx[y, x]
 
                     # Orient line direction with respect to the last line direction
                     alpha = normalize_to_half_circle(np.arctan2(ny, nx))
@@ -698,17 +711,17 @@ class RidgeDetector:
                         )
                         if nexty < 0 or nexty >= height or nextx < 0 or nextx >= width:
                             continue
-                        if self.data.ismax[nexty, nextx] == 0:
+                        if line_points.ismax[nexty, nextx] == 0:
                             continue
                         nextpy, nextpx = (
-                            self.data.posy[nexty, nextx],
-                            self.data.posx[nexty, nextx],
+                            line_points.posy[nexty, nextx],
+                            line_points.posx[nexty, nextx],
                         )
                         dy, dx = nextpy - py, nextpx - px
                         dist = np.sqrt(dx**2 + dy**2)
                         ny, nx = (
-                            self.data.normy[nexty, nextx],
-                            -self.data.normx[nexty, nextx],
+                            line_points.normy[nexty, nextx],
+                            -line_points.normx[nexty, nextx],
                         )
                         nextalpha = normalize_to_half_circle(np.arctan2(ny, nx))
                         diff = abs(alpha - nextalpha)
@@ -718,7 +731,7 @@ class RidgeDetector:
                         if diff < mindiff:
                             mindiff = diff
                             nexti = ti
-                        if not (self.data.ismax[nexty, nextx] == 0):
+                        if not (line_points.ismax[nexty, nextx] == 0):
                             nextismax = True
 
                     # Mark double responses as processed
@@ -729,10 +742,10 @@ class RidgeDetector:
                         )
                         if nexty < 0 or nexty >= height or nextx < 0 or nextx >= width:
                             continue
-                        if self.data.ismax[nexty, nextx] > 0:
+                        if line_points.ismax[nexty, nextx] > 0:
                             ny, nx = (
-                                self.data.normy[nexty, nextx],
-                                -self.data.normx[nexty, nextx],
+                                line_points.normy[nexty, nextx],
+                                -line_points.normx[nexty, nextx],
                             )
                             nextalpha = normalize_to_half_circle(np.arctan2(ny, nx))
                             diff = abs(alpha - nextalpha)
@@ -751,11 +764,11 @@ class RidgeDetector:
                     y += dirtab[octant][nexti][0]
                     x += dirtab[octant][nexti][1]
 
-                    row.append(self.data.posy[y, x])
-                    col.append(self.data.posx[y, x])
+                    row.append(line_points.posy[y, x])
+                    col.append(line_points.posx[y, x])
                     # Orient normal to the line direction with respect to the last normal
-                    ny = self.data.normy[y, x]
-                    nx = self.data.normx[y, x]
+                    ny = line_points.normy[y, x]
+                    nx = line_points.normx[y, x]
 
                     beta = normalize_to_half_circle(np.arctan2(ny, nx))
                     diff1 = min(
@@ -791,8 +804,8 @@ class RidgeDetector:
                             # Line intersects itself
                             for j in range(num_pnt - 1):
                                 if (
-                                    row[j] == self.data.posy[y, x]
-                                    and col[j] == self.data.posx[y, x]
+                                    row[j] == line_points.posy[y, x]
+                                    and col[j] == line_points.posx[y, x]
                                 ):
                                     if j == 0:
                                         # Contour is closed
@@ -843,15 +856,17 @@ class RidgeDetector:
                         else:
                             for j in range(self.contours[k].num):
                                 if (
-                                    self.contours[k].row[j] == self.data.posy[y, x]
-                                    and self.contours[k].col[j] == self.data.posx[y, x]
+                                    self.contours[k].row[j] == line_points.posy[y, x]
+                                    and self.contours[k].col[j]
+                                    == line_points.posx[y, x]
                                 ):
                                     break
                             if j == self.contours[k].num:
                                 # No point found on the other line, a double response occurred
                                 dist = np.sqrt(
-                                    (self.data.posy[y, x] - self.contours[k].row) ** 2
-                                    + (self.data.posx[y, x] - self.contours[k].col) ** 2
+                                    (line_points.posy[y, x] - self.contours[k].row) ** 2
+                                    + (line_points.posx[y, x] - self.contours[k].col)
+                                    ** 2
                                 )
                                 j = np.argmin(dist)
                                 row.append(self.contours[k].row[j])
@@ -926,7 +941,7 @@ class RidgeDetector:
                             ] = 0
 
         if self.extend_line:
-            self.extend_lines(label)
+            self.extend_lines(label, filtered_data)
 
         # Adjust angles to point to the right of the line
         for i in range(num_cont):
@@ -946,20 +961,14 @@ class RidgeDetector:
                         [(ang + np.pi) % (2 * np.pi) for ang in tmp_cont.angle]
                     )
 
-    def compute_line_width(self):
+    def compute_line_width(self, filtered_data: FilteredData):
         if self.data is None:
             raise ValueError("Ridge data is not initialized.")
-        if (
-            self.data.sigma_map is None
-            or self.data.grady is None
-            or self.data.gradx is None
-        ):
-            raise ValueError("sigma_map or gradient data has not been calculated.")
         height = self.data.height
         width = self.data.width
-        length = 2.5 * self.data.sigma_map
+        length = 2.5 * filtered_data.sigma_map
         max_length = np.ceil(length * 1.2).astype(int)
-        grad = np.sqrt(self.data.grady**2 + self.data.gradx**2)
+        grad = np.sqrt(filtered_data.grady**2 + filtered_data.gradx**2)
 
         grad_dr = convolve(grad, kernel_r, mode="mirror")
         grad_dc = convolve(grad, kernel_c, mode="mirror")
@@ -1043,7 +1052,7 @@ class RidgeDetector:
                 grad_r,
                 pos_y,
                 pos_x,
-                self.data.sigma_map,
+                filtered_data.sigma_map,
                 self.correct_pos,
                 self.mode,
             )
@@ -1073,11 +1082,11 @@ class RidgeDetector:
         image = iio.imread(image) if isinstance(image, str) else image
         self.data = RidgeData(image=image)
 
-        self.apply_filtering()
-        self.compute_line_points()
-        self.compute_contours()
+        filtered_data = self.apply_filtering(self.data)
+        line_points = self.compute_line_points(filtered_data)
+        self.compute_contours(filtered_data, line_points)
         if self.estimate_width:
-            self.compute_line_width()
+            self.compute_line_width(filtered_data)
         self.prune_contours()
 
     def save_results(

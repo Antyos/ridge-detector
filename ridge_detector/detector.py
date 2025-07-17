@@ -74,20 +74,21 @@ class RidgeData:
     eigval: NDArray[np.floating]
 
     # Contour detection results
-    contours: list
-    junctions: list
+    contours: list[Line]
+    junctions: list[Junction]
 
     def __init__(self, image: NDArray[np.floating | np.integer]):
-        # Normalize to uint8 if needed
-        if image.dtype != np.uint8:
+        # Normalize to uint8 if needed. The type checker cannot infer the dtype
+        # correctly here, so we use a cast to ensure the type is correct.
+        if image.dtype == np.uint8:
+            self.image = cast(NDArray[np.uint8], image)
+        else:
             self.image = cast(
                 NDArray[np.uint8],
                 ((image - image.min()) / (image.max() - image.min()) * 255).astype(
                     np.uint8
                 ),
             )
-        else:
-            self.image = image
 
         # Convert to grayscale
         self.gray = (
@@ -151,7 +152,7 @@ class RidgeDetector:
 
         # Initialize ridge data container
         self.data = None
-        self.mode = LinesUtil.MODE_DARK if self.dark_line else LinesUtil.MODE_LIGHT
+        self.mode = LinesUtil.MODE.dark if self.dark_line else LinesUtil.MODE.light
 
     def apply_filtering(self, data: RidgeData) -> FilteredData:
         if data is None:
@@ -175,11 +176,11 @@ class RidgeDetector:
         # Filtering at different scales
         gray = data.gray.astype(float)
         for scale_idx, sigma in enumerate(self.sigmas):
-            ry = convolve_gauss(gray, sigma, LinesUtil.DERIV_R)
-            rx = convolve_gauss(gray, sigma, LinesUtil.DERIV_C)
-            ryy = convolve_gauss(gray, sigma, LinesUtil.DERIV_RR)
-            rxy = convolve_gauss(gray, sigma, LinesUtil.DERIV_RC)
-            rxx = convolve_gauss(gray, sigma, LinesUtil.DERIV_CC)
+            ry = convolve_gauss(gray, sigma, LinesUtil.DERIV.R)
+            rx = convolve_gauss(gray, sigma, LinesUtil.DERIV.C)
+            ryy = convolve_gauss(gray, sigma, LinesUtil.DERIV.RR)
+            rxy = convolve_gauss(gray, sigma, LinesUtil.DERIV.RC)
+            rxx = convolve_gauss(gray, sigma, LinesUtil.DERIV.CC)
 
             symmetric_image[..., 0, 0] = ryy
             symmetric_image[..., 0, 1] = rxy
@@ -279,7 +280,7 @@ class RidgeDetector:
 
         val = (
             filtered_data.eigvals[:, :, 0]
-            if self.mode == LinesUtil.MODE_DARK
+            if self.mode == LinesUtil.MODE.dark
             else -filtered_data.eigvals[:, :, 0]
         )
         val_mask = val > 0.0
@@ -317,12 +318,12 @@ class RidgeDetector:
         line_data.posx[base_mask] = X[base_mask] + px[base_mask]
         return line_data
 
-    def extend_lines(self, label, filtered_data: FilteredData):
+    def extend_lines(self, label: NDArray[np.integer], filtered_data: FilteredData):
         if self.data is None:
             raise ValueError("Ridge data is not initialized.")
         height, width = label.shape[:2]
         num_junc = len(self.data.junctions)
-        s = 1 if self.mode == LinesUtil.MODE_DARK else -1
+        s = 1 if self.mode == LinesUtil.MODE.dark else -1
         length = 2.5 * filtered_data.sigma_map
         max_line = np.ceil(length * 1.2).astype(int)
         num_cont = len(self.data.contours)
@@ -335,6 +336,9 @@ class RidgeDetector:
             ):
                 continue
 
+            # Assign initial values for m and j so they aren't unbound
+            m = 0
+            j = 0
             # Check both ends of the line (it==-1: start, it==1: end).
             for it in [-1, 1]:
                 if it == -1:
@@ -860,6 +864,7 @@ class RidgeDetector:
                                     break
                             j = -1
                         else:
+                            j = 0
                             for j in range(self.data.contours[k].num):
                                 if (
                                     self.data.contours[k].row[j]
@@ -920,19 +925,18 @@ class RidgeDetector:
 
             if num_pnt > 1:
                 # Create a new Line object and copy the current line's attributes
-                new_line = Line()
-                new_line.row = np.array(row)
-                new_line.col = np.array(col)
-                new_line.angle = np.array(angle)
-                new_line.response = np.array(resp)
-                new_line.width_r = None
-                new_line.width_l = None
-                new_line.asymmetry = None
-                new_line.intensity = None
-                new_line.num = num_pnt
-                new_line.set_contour_class(cls)
-
-                # Add the new line to the list of contours
+                new_line = Line(
+                    row=np.array(row),
+                    col=np.array(col),
+                    angle=np.array(angle),
+                    response=np.array(resp),
+                    width_r=None,
+                    width_l=None,
+                    asymmetry=None,
+                    intensity=None,
+                    num=num_pnt,
+                    cont_class=cls,
+                )
                 self.data.contours.append(new_line)
                 num_cont += 1
             else:

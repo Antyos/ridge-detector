@@ -2,10 +2,12 @@ import colorsys
 import math
 import random
 from enum import Enum
+from typing import Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
 from numba import jit
+from numpy.typing import DTypeLike, NDArray
 from scipy.ndimage import convolve, gaussian_filter1d
 
 from .constants import LINE_WIDTH_COMPENSATION
@@ -15,19 +17,41 @@ from .correct import Correct
 class Line:
     id_counter = 0  # Class variable for tracking ID
 
-    def __init__(self, x=None, y=None):
+    num: int
+    row: NDArray[np.integer]
+    col: NDArray[np.integer]
+    angle: NDArray[np.floating]
+    response: NDArray[np.floating]
+    width_l: NDArray[np.floating]
+    width_r: NDArray[np.floating]
+    asymmetry: NDArray[np.floating]
+    intensity: NDArray[np.floating]
+
+    def __init__(
+        self,
+        row,
+        col,
+        angle,
+        response,
+        width_l=None,
+        width_r=None,
+        asymmetry=None,
+        intensity=None,
+        num=None,
+        cont_class=None,
+    ):
         self.id = Line.id_counter
         Line.id_counter += 1
 
-        self.num = 0 if x is None else len(x)
-        self.row = [] if y is None else y
-        self.col = [] if x is None else x
-        self.angle = [0.0] * self.num
-        self.response = [0.0] * self.num
-        self.width_l = [0.0] * self.num
-        self.width_r = [0.0] * self.num
-        self.asymmetry = [0.0] * self.num
-        self.intensity = [0.0] * self.num
+        self.num = num if num is not None else 0 if col is None else len(col)
+        self.row = np.array(row)
+        self.col = np.array(col)
+        self.angle = np.array(angle)
+        self.response = np.array(response)
+        self.width_l = width_l or np.zeros(self.num, dtype=np.float32)
+        self.width_r = width_r or np.zeros(self.num, dtype=np.float32)
+        self.asymmetry = asymmetry or np.zeros(self.num, dtype=np.float32)
+        self.intensity = intensity or np.zeros(self.num, dtype=np.float32)
         self.cont_class = None  # Placeholder for contour class
 
     def get_contour_class(self):
@@ -101,14 +125,20 @@ class Crossref:
 
 
 class LinesUtil:
-    DERIV_R = 1  # Derivative in row direction
-    DERIV_C = 2  # Derivative in column direction
-    DERIV_RR = 3  # Second derivative in row direction
-    DERIV_RC = 4  # Second derivative in row and column direction
-    DERIV_CC = 5  # Second derivative in column direction
+    class DERIV(Enum):
+        """Enum for derivative types."""
 
-    MODE_LIGHT = 1  # Extract bright lines
-    MODE_DARK = 2  # Extract dark lines
+        R = 1  # Derivative in row direction
+        C = 2  # Derivative in column direction
+        RR = 3  # Second derivative in row direction
+        RC = 4  # Second derivative in row and column direction
+        CC = 5  # Second derivative in column direction
+
+    class MODE(Enum):
+        """Enum for line extraction modes."""
+
+        light = 1  # Extract bright lines
+        dark = 2  # Extract dark lines
 
     MAX_SIZE_MASK_0 = 3.09023230616781  # Size for Gaussian mask
     MAX_SIZE_MASK_1 = 3.46087178201605  # Size for 1st derivative mask
@@ -236,7 +266,7 @@ class Normal:
     SQRT2 = 1.41421356237309504880
 
     @staticmethod
-    def getNormal(x):
+    def getNormal(x: NDArray):
         if x < -Normal.UPPERLIMIT:
             return 0.0
         if x > Normal.UPPERLIMIT:
@@ -364,22 +394,24 @@ def compute_gauss_mask_2(sigma):
     return h, n
 
 
-def convolve_gauss(image, sigma, deriv_type):
-    if deriv_type == LinesUtil.DERIV_R:
+def convolve_gauss(image: NDArray, sigma: float, deriv_type: LinesUtil.DERIV):
+    if deriv_type == LinesUtil.DERIV.R:
         hr, nr = compute_gauss_mask_1(sigma)
         hc, nc = compute_gauss_mask_0(sigma)
-    elif deriv_type == LinesUtil.DERIV_C:
+    elif deriv_type == LinesUtil.DERIV.C:
         hr, nr = compute_gauss_mask_0(sigma)
         hc, nc = compute_gauss_mask_1(sigma)
-    elif deriv_type == LinesUtil.DERIV_RR:
+    elif deriv_type == LinesUtil.DERIV.RR:
         hr, nr = compute_gauss_mask_2(sigma)
         hc, nc = compute_gauss_mask_0(sigma)
-    elif deriv_type == LinesUtil.DERIV_RC:
+    elif deriv_type == LinesUtil.DERIV.RC:
         hr, nr = compute_gauss_mask_1(sigma)
         hc, nc = compute_gauss_mask_1(sigma)
-    else:
+    elif deriv_type == LinesUtil.DERIV.CC:
         hr, nr = compute_gauss_mask_0(sigma)
         hc, nc = compute_gauss_mask_2(sigma)
+    else:
+        raise ValueError("Invalid derivative type")
 
     return convolve(
         convolve(image, hr.reshape(-1, 1), mode="nearest"),
@@ -388,7 +420,7 @@ def convolve_gauss(image, sigma, deriv_type):
     )
 
 
-def normalize(x, pmin=2, pmax=98, axis=None, eps=1e-20, dtype=np.float32):
+def normalize(x, pmin=2, pmax=98, axis=None, eps=1e-20, dtype: DTypeLike = np.float32):
     """Percentile-based image normalization."""
 
     mi = np.percentile(x, pmin, axis=axis, keepdims=True)
@@ -619,7 +651,7 @@ def fix_locations(
     pos_x,
     sigma_map,
     correct_pos=True,
-    mode=LinesUtil.MODE_DARK,
+    mode=LinesUtil.MODE.dark,
 ):
     num_points = cont.num
     correction = np.zeros(num_points, dtype=float)

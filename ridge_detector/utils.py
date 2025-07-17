@@ -137,8 +137,8 @@ class LinesUtil:
     class MODE(Enum):
         """Enum for line extraction modes."""
 
-        light = 1  # Extract bright lines
-        dark = 2  # Extract dark lines
+        light = -1  # Extract bright lines
+        dark = 1  # Extract dark lines
 
     MAX_SIZE_MASK_0 = 3.09023230616781  # Size for Gaussian mask
     MAX_SIZE_MASK_1 = 3.46087178201605  # Size for 1st derivative mask

@@ -278,11 +278,7 @@ class RidgeDetector:
         rxy = filtered_data.derivatives[3, ...]
         rxx = filtered_data.derivatives[4, ...]
 
-        val = (
-            filtered_data.eigvals[:, :, 0]
-            if self.mode == LinesUtil.MODE.dark
-            else -filtered_data.eigvals[:, :, 0]
-        )
+        val = filtered_data.eigvals[:, :, 0] * self.mode.value
         val_mask = val > 0.0
         self.data.eigval[val_mask] = val[val_mask]
 
@@ -323,7 +319,7 @@ class RidgeDetector:
             raise ValueError("Ridge data is not initialized.")
         height, width = label.shape[:2]
         num_junc = len(self.data.junctions)
-        s = 1 if self.mode == LinesUtil.MODE.dark else -1
+        s = self.mode.value
         length = 2.5 * filtered_data.sigma_map
         max_line = np.ceil(length * 1.2).astype(int)
         num_cont = len(self.data.contours)

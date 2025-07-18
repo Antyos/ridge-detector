@@ -13,6 +13,9 @@ from scipy.ndimage import convolve, gaussian_filter1d
 from .constants import LINE_WIDTH_COMPENSATION
 from .correct import Correct
 
+ArrayLikeInt = int | np.integer | NDArray[np.integer]
+ArrayLikeFloat = float | np.floating | NDArray[np.floating]
+
 
 class Line:
     id_counter = 0  # Class variable for tracking ID
@@ -190,22 +193,38 @@ class LinesUtil:
 
 
 class Junction:
+    cont1: int | np.integer
+    cont2: int | np.integer
+    pos: int | np.integer
+    y: float | np.floating
+    x: float | np.floating
+
     def __init__(
         self,
-        cont1=-1,
-        cont2=-1,
-        pos=0,
-        y=0.0,
-        x=0.0,
+        cont1: ArrayLikeInt = -1,
+        cont2: ArrayLikeInt = -1,
+        pos: ArrayLikeInt = 0,
+        y: ArrayLikeFloat = 0.0,
+        x: ArrayLikeFloat = 0.0,
         line_cont1=None,
         line_cont2=None,
         is_non_terminal=False,
     ):
-        self.cont1 = cont1
-        self.cont2 = cont2
-        self.pos = pos
-        self.y = y
-        self.x = x
+        # Ensure all ArrayLikeInt/Float are single elements, not arrays
+        def _ensure_scalar(val, name):
+            if isinstance(val, np.ndarray):
+                if val.size != 1:
+                    raise ValueError(
+                        f"{name} must be a single element, got array of shape {val.shape}"
+                    )
+                return val.item()
+            return val
+
+        self.cont1 = _ensure_scalar(cont1, "cont1")
+        self.cont2 = _ensure_scalar(cont2, "cont2")
+        self.pos = _ensure_scalar(pos, "pos")
+        self.y = _ensure_scalar(y, "y")
+        self.x = _ensure_scalar(x, "x")
         self.line_cont1 = line_cont1
         self.line_cont2 = line_cont2
         self.is_non_terminal = is_non_terminal
@@ -420,17 +439,18 @@ def convolve_gauss(image: NDArray, sigma: float, deriv_type: LinesUtil.DERIV):
     )
 
 
-def normalize(x, pmin=2, pmax=98, axis=None, eps=1e-20, dtype: DTypeLike = np.float32):
+def normalize(
+    x, pmin=2, pmax=98, axis=None, eps=1e-20, dtype: Optional[DTypeLike] = np.float32
+):
     """Percentile-based image normalization."""
 
     mi = np.percentile(x, pmin, axis=axis, keepdims=True)
     ma = np.percentile(x, pmax, axis=axis, keepdims=True)
     if dtype is not None:
         x = x.astype(dtype, copy=False)
-        mi = dtype(mi) if np.isscalar(mi) else mi.astype(dtype, copy=False)
-        ma = dtype(ma) if np.isscalar(ma) else ma.astype(dtype, copy=False)
-        eps = dtype(eps)
-
+        mi = mi.astype(dtype, copy=False)
+        ma = ma.astype(dtype, copy=False)
+        eps = np.array(eps, dtype=dtype).item()
     x = (x - mi) / (ma - mi + eps)
 
     return np.clip(x, 0, 1)

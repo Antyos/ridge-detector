@@ -335,6 +335,8 @@ class RidgeDetector:
             # Assign initial values for m and j so they aren't unbound
             m = 0
             j = 0
+            end_angle = 0
+            end_resp = 0
             # Check both ends of the line (it==-1: start, it==1: end).
             for it in [-1, 1]:
                 if it == -1:
@@ -774,12 +776,12 @@ class RidgeDetector:
                     nx = line_points.normx[y, x]
 
                     beta = normalize_to_half_circle(np.arctan2(ny, nx))
-                    diff1 = min(
+                    diff1 = np.minimum(
                         abs(beta - last_beta), 2.0 * np.pi - abs(beta - last_beta)
                     )
                     # Normalize alternative beta
                     alt_beta = (beta + np.pi) % (2.0 * np.pi)
-                    diff2 = min(
+                    diff2 = np.minimum(
                         abs(alt_beta - last_beta),
                         2.0 * np.pi - abs(alt_beta - last_beta),
                     )

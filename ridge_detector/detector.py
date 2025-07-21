@@ -1,3 +1,4 @@
+import itertools
 import os
 from dataclasses import dataclass, field
 from typing import Optional, cast
@@ -477,7 +478,6 @@ class RidgeDetector:
                     tmp_cont.col = new_col
                     tmp_cont.angle = new_angle
                     tmp_cont.response = new_resp
-                    tmp_cont.num = num_pnt
                     if it == -1:
                         tmp_cont.row[num_add:] = trow
                         tmp_cont.row[:num_add] = exty[:num_add][::-1]
@@ -536,15 +536,19 @@ class RidgeDetector:
                         if it == -1:
                             self.data.junctions.append(
                                 Junction(
-                                    m, idx_cont, j, tmp_cont.row[0], tmp_cont.col[0]
+                                    int(m),
+                                    idx_cont,
+                                    int(j),
+                                    tmp_cont.row[0],
+                                    tmp_cont.col[0],
                                 )
                             )
                         else:
                             self.data.junctions.append(
                                 Junction(
-                                    m,
+                                    int(m),
                                     idx_cont,
-                                    j,
+                                    int(j),
                                     tmp_cont.row[num_pnt - 1],
                                     tmp_cont.col[num_pnt - 1],
                                 )
@@ -562,16 +566,13 @@ class RidgeDetector:
         indx = np.zeros((height, width), dtype=int)
 
         num_cont, num_junc = 0, 0
-
-        cross = []
-        area = 0
-        for r_idx in range(height):
-            for c_idx in range(width):
-                if line_points.ismax[r_idx, c_idx] >= 2:
-                    area += 1
-                    cross.append(
-                        Crossref(r_idx, c_idx, self.data.eigval[r_idx, c_idx], False)
-                    )
+        cross: list[Crossref] = []
+        for r_idx, c_idx in itertools.product(range(height), range(width)):
+            if line_points.ismax[r_idx, c_idx] >= 2:
+                cross.append(
+                    Crossref(r_idx, c_idx, self.data.eigval[r_idx, c_idx], False)
+                )
+        area = len(cross)
 
         response_2d = self.data.eigval.reshape(height, width)
         resp_dr = convolve(response_2d, kernel_r, mode="mirror")
@@ -835,8 +836,8 @@ class RidgeDetector:
                                                     num_cont,
                                                     num_cont,
                                                     j,
-                                                    line_points.posy[y, x],
-                                                    line_points.posx[y, x],
+                                                    float(line_points.posy[y, x]),
+                                                    float(line_points.posx[y, x]),
                                                 )
                                             )
                                             num_junc += 1
@@ -848,8 +849,8 @@ class RidgeDetector:
                                                     num_cont,
                                                     num_cont,
                                                     num_pnt - 1 - j,
-                                                    line_points.posy[y, x],
-                                                    line_points.posx[y, x],
+                                                    float(line_points.posy[y, x]),
+                                                    float(line_points.posx[y, x]),
                                                 )
                                             )
                                             num_junc += 1
@@ -905,7 +906,11 @@ class RidgeDetector:
                             # Add the new junction
                             self.data.junctions.append(
                                 Junction(
-                                    k, num_cont, j, row[num_pnt - 1], col[num_pnt - 1]
+                                    int(k),
+                                    num_cont,
+                                    int(j),
+                                    row[num_pnt - 1],
+                                    col[num_pnt - 1],
                                 )
                             )
                             num_junc += 1
@@ -926,8 +931,7 @@ class RidgeDetector:
                     width_l=None,
                     asymmetry=None,
                     intensity=None,
-                    num=num_pnt,
-                    cont_class=cls,
+                    contour_class=cls,
                 )
                 self.data.contours.append(new_line)
                 num_cont += 1

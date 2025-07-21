@@ -193,38 +193,28 @@ class LinesUtil:
 
 
 class Junction:
-    cont1: int | np.integer
-    cont2: int | np.integer
-    pos: int | np.integer
-    y: float | np.floating
-    x: float | np.floating
+    cont1: int
+    cont2: int
+    pos: int
+    y: float
+    x: float
 
     def __init__(
         self,
-        cont1: ArrayLikeInt = -1,
-        cont2: ArrayLikeInt = -1,
-        pos: ArrayLikeInt = 0,
-        y: ArrayLikeFloat = 0.0,
-        x: ArrayLikeFloat = 0.0,
+        cont1: int = -1,
+        cont2: int = -1,
+        pos: int = 0,
+        y: float = 0.0,
+        x: float = 0.0,
         line_cont1=None,
         line_cont2=None,
         is_non_terminal=False,
     ):
-        # Ensure all ArrayLikeInt/Float are single elements, not arrays
-        def _ensure_scalar(val, name):
-            if isinstance(val, np.ndarray):
-                if val.size != 1:
-                    raise ValueError(
-                        f"{name} must be a single element, got array of shape {val.shape}"
-                    )
-                return val.item()
-            return val
-
-        self.cont1 = _ensure_scalar(cont1, "cont1")
-        self.cont2 = _ensure_scalar(cont2, "cont2")
-        self.pos = _ensure_scalar(pos, "pos")
-        self.y = _ensure_scalar(y, "y")
-        self.x = _ensure_scalar(x, "x")
+        self.cont1 = cont1
+        self.cont2 = cont2
+        self.pos = pos
+        self.y = y
+        self.x = x
         self.line_cont1 = line_cont1
         self.line_cont2 = line_cont2
         self.is_non_terminal = is_non_terminal

@@ -20,7 +20,6 @@ ArrayLikeFloat = float | np.floating | NDArray[np.floating]
 class Line:
     id_counter = 0  # Class variable for tracking ID
 
-    num: int
     row: NDArray[np.integer]
     col: NDArray[np.integer]
     angle: NDArray[np.floating]
@@ -32,36 +31,42 @@ class Line:
 
     def __init__(
         self,
-        row,
-        col,
-        angle,
-        response,
-        width_l=None,
-        width_r=None,
-        asymmetry=None,
-        intensity=None,
-        num=None,
-        cont_class=None,
+        row: ArrayLikeFloat,
+        col: ArrayLikeFloat,
+        angle: ArrayLikeFloat,
+        response: ArrayLikeFloat,
+        width_l: Optional[ArrayLikeFloat] = None,
+        width_r: Optional[ArrayLikeFloat] = None,
+        asymmetry: Optional[ArrayLikeFloat] = None,
+        intensity: Optional[ArrayLikeFloat] = None,
+        contour_class: Optional["LinesUtil.ContourClass"] = None,
     ):
         self.id = Line.id_counter
         Line.id_counter += 1
 
-        self.num = num if num is not None else 0 if col is None else len(col)
         self.row = np.array(row)
         self.col = np.array(col)
         self.angle = np.array(angle)
         self.response = np.array(response)
-        self.width_l = width_l or np.zeros(self.num, dtype=np.float32)
-        self.width_r = width_r or np.zeros(self.num, dtype=np.float32)
-        self.asymmetry = asymmetry or np.zeros(self.num, dtype=np.float32)
-        self.intensity = intensity or np.zeros(self.num, dtype=np.float32)
-        self.cont_class = None  # Placeholder for contour class
+        length = len(self.row)
+        self.width_l = np.array(width_l) or np.zeros(length, dtype=np.float32)
+        self.width_r = np.array(width_r) or np.zeros(length, dtype=np.float32)
+        self.asymmetry = np.array(asymmetry) or np.zeros(length, dtype=np.float32)
+        self.intensity = np.array(intensity) or np.zeros(length, dtype=np.float32)
+        self.contour_class = contour_class
+
+    def __len__(self):
+        return len(self.row)
+
+    @property
+    def num(self):
+        return len(self)
 
     def get_contour_class(self):
-        return self.cont_class
+        return self.contour_class
 
-    def set_contour_class(self, cont_class):
-        self.cont_class = cont_class
+    def set_contour_class(self, contour_class):
+        self.contour_class = contour_class
 
     def get_x_coordinates(self):
         return self.col

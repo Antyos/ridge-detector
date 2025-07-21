@@ -50,8 +50,8 @@ class FilteredData:
     grady: NDArray[np.floating] = field(init=False)
 
     def __post_init__(self):
-        self.gradx = self.derivatives[0, ...]
-        self.grady = self.derivatives[1, ...]
+        self.gradx = self.derivatives[1, ...]
+        self.grady = self.derivatives[0, ...]
 
 
 class LinePoints:

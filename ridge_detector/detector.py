@@ -1,5 +1,5 @@
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, cast
 
 import cv2
@@ -43,9 +43,13 @@ class FilteredData:
     upper_thresh: NDArray[np.floating]
     eigvals: NDArray[np.floating]
     eigvecs: NDArray[np.floating]
-    gradx: NDArray[np.floating]
-    grady: NDArray[np.floating]
     sigma_map: NDArray[np.floating]
+    gradx: NDArray[np.floating] = field(init=False)
+    grady: NDArray[np.floating] = field(init=False)
+
+    def __post_init__(self):
+        self.gradx = self.derivatives[0, ...]
+        self.grady = self.derivatives[1, ...]
 
 
 class LinePoints:
@@ -231,24 +235,16 @@ class RidgeDetector:
 
         # Get the scale index of the maximum saliency and the corresponding derivatives and thresholds
         global_max_idx = saliency.argsort()[..., -1]
-        derivatives = np.array(
-            [
-                np.squeeze(
-                    np.take_along_axis(rys, global_max_idx[:, :, None], axis=-1)
-                ),
-                np.squeeze(
-                    np.take_along_axis(rxs, global_max_idx[:, :, None], axis=-1)
-                ),
-                np.squeeze(
-                    np.take_along_axis(ryys, global_max_idx[:, :, None], axis=-1)
-                ),
-                np.squeeze(
-                    np.take_along_axis(rxys, global_max_idx[:, :, None], axis=-1)
-                ),
-                np.squeeze(
-                    np.take_along_axis(rxxs, global_max_idx[:, :, None], axis=-1)
-                ),
-            ]
+        derivatives = np.squeeze(
+            np.array(
+                [
+                    np.take_along_axis(rys, global_max_idx[:, :, None], axis=-1),
+                    np.take_along_axis(rxs, global_max_idx[:, :, None], axis=-1),
+                    np.take_along_axis(ryys, global_max_idx[:, :, None], axis=-1),
+                    np.take_along_axis(rxys, global_max_idx[:, :, None], axis=-1),
+                    np.take_along_axis(rxxs, global_max_idx[:, :, None], axis=-1),
+                ]
+            )
         )
         return FilteredData(
             lower_thresh=np.squeeze(
@@ -261,8 +257,6 @@ class RidgeDetector:
                 np.take_along_axis(sigma_maps, global_max_idx[:, :, None], axis=-1)
             ),
             derivatives=derivatives,
-            grady=derivatives[0, ...],
-            gradx=derivatives[1, ...],
             eigvals=np.take_along_axis(saliency, global_max_idx[:, :, None], axis=-1),
             eigvecs=np.take_along_axis(
                 orientation, global_max_idx[:, :, None, None], axis=-1

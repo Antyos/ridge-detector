@@ -1,6 +1,7 @@
 import itertools
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Optional, cast
 
 import cv2
@@ -1277,8 +1278,6 @@ class RidgeDetector:
 
 
 if __name__ == "__main__":
-    from pathlib import Path
-
     detector = RidgeDetector(
         line_widths=np.arange(7, 11),
         low_contrast=50,

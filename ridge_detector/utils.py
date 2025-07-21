@@ -676,7 +676,9 @@ def interpolate_response(resp, x, y, px, py, width, height):
     return d + xx * dr + yy * dc + xx**2 * drr + xx * yy * drc + yy**2 * dcc
 
 
-def interpolate_gradient(gradx, grady, px, py, width):
+def interpolate_gradient(
+    gradx: NDArray, grady: NDArray, px: float, py: float, width: int
+):
     gix = int(px // 1)
     giy = int(py // 1)
     gfx = px % 1.0
@@ -697,7 +699,7 @@ def interpolate_gradient(gradx, grady, px, py, width):
 
 
 def fix_locations(
-    cont,
+    cont: Line,
     width_l,
     width_r,
     grad_l,
@@ -719,7 +721,7 @@ def fix_locations(
     # Correct positions if required
     if correct_pos:
         correct_start = (
-            cont.cont_class
+            cont.contour_class
             in [
                 LinesUtil.ContourClass.cont_no_junc,
                 LinesUtil.ContourClass.cont_end_junc,
@@ -727,7 +729,7 @@ def fix_locations(
             ]
         ) and (width_r[0] > 0 and width_l[0] > 0)
         correct_end = (
-            cont.cont_class
+            cont.contour_class
             in [
                 LinesUtil.ContourClass.cont_no_junc,
                 LinesUtil.ContourClass.cont_start_junc,
@@ -784,7 +786,7 @@ def fix_locations(
     return cont
 
 
-def color_line_segments(image, conts):
+def color_line_segments(image: NDArray, conts: Sequence[Line]):
     for cont in conts:
         hue = random.random()
         saturation = 1

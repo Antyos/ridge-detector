@@ -28,6 +28,7 @@ from ridge_detector.utils import (
     Crossref,
     Junction,
     Line,
+    LineData,
     LinesUtil,
     bresenham,
     closest_point,
@@ -566,7 +567,6 @@ class RidgeDetector:
         label = np.zeros((height, width), dtype=int)
         indx = np.zeros((height, width), dtype=int)
 
-        num_cont, num_junc = 0, 0
         cross: list[Crossref] = []
         for r_idx, c_idx in itertools.product(range(height), range(width)):
             if line_points.ismax[r_idx, c_idx] >= 2:
@@ -605,17 +605,14 @@ class RidgeDetector:
                 break
 
             # Initialize line data
-            row, col, angle, resp = [], [], [], []
+            line_data = LineData()
 
             # Add starting point to the line.
-            num_pnt = 0
-            label[maxy, maxx] = num_cont + 1
+            label[maxy, maxx] = len(self.data.contours) + 1
             if indx[maxy, maxx] != 0:
                 cross[indx[maxy, maxx] - 1].done = True
 
             # Select line direction
-            row.append(maxy)
-            col.append(maxx)
             nx = -line_points.normx[maxy, maxx]
             ny = line_points.normy[maxy, maxx]
             alpha = normalize_to_half_circle(np.arctan2(ny, nx))
@@ -630,7 +627,6 @@ class RidgeDetector:
             beta = alpha + np.pi / 2.0
             if beta >= 2.0 * np.pi:
                 beta -= 2.0 * np.pi
-            angle.append(beta)
             yy = line_points.posy[maxy, maxx] - maxy
             xx = line_points.posx[maxy, maxx] - maxx
             interpolated_response = (
@@ -641,8 +637,9 @@ class RidgeDetector:
                 + xx * yy * resp_drc[maxy, maxx]
                 + xx**2 * resp_dcc[maxy, maxx]
             )
-            resp.append(interpolated_response)
-            num_pnt += 1
+            line_data.append(
+                row=maxy, col=maxx, angle=beta, response=interpolated_response
+            )
 
             # Mark double responses as processed.
             for ni in range(2):
@@ -658,7 +655,7 @@ class RidgeDetector:
                     if diff >= np.pi / 2.0:
                         diff = np.pi - diff
                     if diff < MAX_ANGLE_DIFFERENCE:
-                        label[nexty, nextx] = num_cont + 1
+                        label[nexty, nextx] = len(self.data.contours) + 1
                         if indx[nexty, nextx] != 0:
                             cross[indx[nexty, nextx] - 1].done = True
 
@@ -678,10 +675,7 @@ class RidgeDetector:
 
                 if it == 2:
                     # Sort the points found in the first iteration in reverse.
-                    row.reverse()
-                    col.reverse()
-                    angle.reverse()
-                    resp.reverse()
+                    line_data.reverse()
 
                 while True:
                     ny, nx = line_points.normy[y, x], -line_points.normx[y, x]
@@ -718,12 +712,11 @@ class RidgeDetector:
                             line_points.posy[nexty, nextx],
                             line_points.posx[nexty, nextx],
                         )
-                        dy, dx = nextpy - py, nextpx - px
+                        dy = nextpy - py
+                        dx = nextpx - px
                         dist = np.sqrt(dx**2 + dy**2)
-                        ny, nx = (
-                            line_points.normy[nexty, nextx],
-                            -line_points.normx[nexty, nextx],
-                        )
+                        ny = line_points.normy[nexty, nextx]
+                        nx = -line_points.normx[nexty, nextx]
                         nextalpha = normalize_to_half_circle(np.arctan2(ny, nx))
                         diff = abs(alpha - nextalpha)
                         if diff >= np.pi / 2.0:
@@ -737,23 +730,19 @@ class RidgeDetector:
 
                     # Mark double responses as processed
                     for ni in range(2):
-                        nexty, nextx = (
-                            y + cleartab[octant][ni][0],
-                            x + cleartab[octant][ni][1],
-                        )
+                        nexty = y + cleartab[octant][ni][0]
+                        nextx = x + cleartab[octant][ni][1]
                         if nexty < 0 or nexty >= height or nextx < 0 or nextx >= width:
                             continue
                         if line_points.ismax[nexty, nextx] > 0:
-                            ny, nx = (
-                                line_points.normy[nexty, nextx],
-                                -line_points.normx[nexty, nextx],
-                            )
+                            ny = line_points.normy[nexty, nextx]
+                            nx = -line_points.normx[nexty, nextx]
                             nextalpha = normalize_to_half_circle(np.arctan2(ny, nx))
                             diff = abs(alpha - nextalpha)
                             if diff >= np.pi / 2.0:
                                 diff = np.pi - diff
                             if diff < MAX_ANGLE_DIFFERENCE:
-                                label[nexty, nextx] = num_cont + 1
+                                label[nexty, nextx] = len(self.data.contours) + 1
                                 if not (indx[nexty, nextx] == 0):
                                     cross[indx[nexty, nextx] - 1].done = True
 
@@ -765,8 +754,6 @@ class RidgeDetector:
                     y += dirtab[octant][nexti][0]
                     x += dirtab[octant][nexti][1]
 
-                    row.append(line_points.posy[y, x])
-                    col.append(line_points.posx[y, x])
                     # Orient normal to the line direction with respect to the last normal
                     ny = line_points.normy[y, x]
                     nx = line_points.normx[y, x]
@@ -783,13 +770,10 @@ class RidgeDetector:
                     )
                     # Choose the angle with the smallest difference and update
                     chosen_beta = beta if diff1 < diff2 else alt_beta
-                    angle.append(chosen_beta)
                     last_beta = chosen_beta
 
-                    yy, xx = (
-                        line_points.posy[y, x] - maxy,
-                        line_points.posx[y, x] - maxx,
-                    )
+                    yy = line_points.posy[y, x] - maxy
+                    xx = line_points.posx[y, x] - maxx
                     interpolated_response = (
                         resp_dd[y, x]
                         + yy * resp_dr[y, x]
@@ -798,67 +782,57 @@ class RidgeDetector:
                         + xx * yy * resp_drc[y, x]
                         + xx**2 * resp_dcc[y, x]
                     )
-                    resp.append(interpolated_response)
-                    num_pnt += 1
+                    line_data.append(
+                        row=line_points.posy[y, x],
+                        col=line_points.posx[y, x],
+                        angle=chosen_beta,
+                        response=interpolated_response,
+                    )
 
                     # If the appropriate neighbor is already processed a junction point is found
                     if label[y, x] > 0:
                         k = label[y, x] - 1
-                        if k == num_cont:
+                        if k == len(self.data.contours):
                             # Line intersects itself
-                            for j in range(num_pnt - 1):
-                                if (
-                                    row[j] == line_points.posy[y, x]
-                                    and col[j] == line_points.posx[y, x]
+                            for j in range(len(line_data) - 1):
+                                if not (
+                                    line_data.row[j] == line_points.posy[y, x]
+                                    and line_data.col[j] == line_points.posx[y, x]
                                 ):
-                                    if j == 0:
-                                        # Contour is closed
-                                        cls = LinesUtil.ContourClass.cont_closed
-                                        row.reverse()
-                                        col.reverse()
-                                        angle.reverse()
-                                        resp.reverse()
-                                        it = 2
-                                    else:
-                                        # Determine contour class
-                                        if it == 2:
-                                            if (
-                                                cls
-                                                == LinesUtil.ContourClass.cont_start_junc
-                                            ):
-                                                cls = LinesUtil.ContourClass.cont_both_junc
-                                            else:
-                                                cls = (
-                                                    LinesUtil.ContourClass.cont_end_junc
-                                                )
-                                            # Index j is correct
-                                            self.data.junctions.append(
-                                                Junction(
-                                                    num_cont,
-                                                    num_cont,
-                                                    j,
-                                                    float(line_points.posy[y, x]),
-                                                    float(line_points.posx[y, x]),
-                                                )
-                                            )
-                                            num_junc += 1
+                                    continue
+                                if j == 0:
+                                    # Contour is closed
+                                    cls = LinesUtil.ContourClass.cont_closed
+                                    line_data.reverse()
+                                    it = 2
+                                else:
+                                    # Determine contour class
+                                    if it == 2:
+                                        if (
+                                            cls
+                                            == LinesUtil.ContourClass.cont_start_junc
+                                        ):
+                                            cls = LinesUtil.ContourClass.cont_both_junc
                                         else:
-                                            cls = LinesUtil.ContourClass.cont_start_junc
-                                            # Index num_pnt-1-j is correct since the line will be sorted in reverse
-                                            self.data.junctions.append(
-                                                Junction(
-                                                    num_cont,
-                                                    num_cont,
-                                                    num_pnt - 1 - j,
-                                                    float(line_points.posy[y, x]),
-                                                    float(line_points.posx[y, x]),
-                                                )
-                                            )
-                                            num_junc += 1
-                                    break
+                                            cls = LinesUtil.ContourClass.cont_end_junc
+                                        # Index j is correct
+                                        pos = j
+                                    else:
+                                        cls = LinesUtil.ContourClass.cont_start_junc
+                                        # Index num_pnt-1-j is correct since the line will be sorted in reverse
+                                        pos = len(line_data) - 1 - j
+                                    self.data.junctions.append(
+                                        Junction(
+                                            len(self.data.contours),
+                                            len(self.data.contours),
+                                            pos,
+                                            float(line_points.posy[y, x]),
+                                            float(line_points.posx[y, x]),
+                                        )
+                                    )
+                                break
                             j = -1
                         else:
-                            j = 0
                             for j in range(self.data.contours[k].num):
                                 if (
                                     self.data.contours[k].row[j]
@@ -867,6 +841,8 @@ class RidgeDetector:
                                     == line_points.posx[y, x]
                                 ):
                                     break
+                            else:
+                                j = -1
                             if j == self.data.contours[k].num:
                                 # No point found on the other line, a double response occurred
                                 dist = np.sqrt(
@@ -879,8 +855,6 @@ class RidgeDetector:
                                     ** 2
                                 )
                                 j = np.argmin(dist)
-                                row.append(self.data.contours[k].row[j])
-                                col.append(self.data.contours[k].col[j])
                                 beta = self.data.contours[k].angle[j]
                                 if beta >= np.pi:
                                     beta -= np.pi
@@ -890,11 +864,12 @@ class RidgeDetector:
                                 diff2 = abs(beta + np.pi - last_beta)
                                 if diff2 >= np.pi:
                                     diff2 = 2.0 * np.pi - diff2
-                                angle.append(beta) if diff1 < diff2 else angle.append(
-                                    beta + np.pi
+                                line_data.append(
+                                    row=self.data.contours[k].row[j],
+                                    col=self.data.contours[k].col[j],
+                                    angle=beta if diff1 < diff2 else beta + np.pi,
+                                    response=self.data.contours[k].response[j],
                                 )
-                                resp.append(self.data.contours[k].response[j])
-                                num_pnt += 1
                         if 0 < j < self.data.contours[k].num - 1:
                             # Determine contour class
                             if it == 1:
@@ -908,69 +883,51 @@ class RidgeDetector:
                             self.data.junctions.append(
                                 Junction(
                                     int(k),
-                                    num_cont,
+                                    len(self.data.contours),
                                     int(j),
-                                    row[num_pnt - 1],
-                                    col[num_pnt - 1],
+                                    line_data.row[-1],
+                                    line_data.col[-1],
                                 )
                             )
-                            num_junc += 1
                         break
 
-                    label[y, x] = num_cont + 1
+                    label[y, x] = len(self.data.contours) + 1
                     if indx[y, x] != 0:
                         cross[indx[y, x] - 1].done = True
 
-            if num_pnt > 1:
-                # Create a new Line object and copy the current line's attributes
-                new_line = Line(
-                    row=np.array(row),
-                    col=np.array(col),
-                    angle=np.array(angle),
-                    response=np.array(resp),
-                    width_r=None,
-                    width_l=None,
-                    asymmetry=None,
-                    intensity=None,
-                    contour_class=cls,
-                )
-                self.data.contours.append(new_line)
-                num_cont += 1
+            if len(line_data) > 1:
+                self.data.contours.append(line_data.to_line(contour_class=cls))
             else:
                 # Delete the point from the label image; using maxx and maxy as coordinates in the label image
-                for i in range(-1, 2):
-                    for j in range(-1, 2):
-                        if (
-                            label[
-                                LinesUtil.BR(maxy + i, height),
-                                LinesUtil.BC(maxx + j, width),
-                            ]
-                            == num_cont + 1
-                        ):
-                            label[
-                                LinesUtil.BR(maxy + i, height),
-                                LinesUtil.BC(maxx + j, width),
-                            ] = 0
+                for i, j in itertools.product(range(-1, 2), repeat=2):
+                    if (
+                        label[
+                            LinesUtil.BR(maxy + i, height),
+                            LinesUtil.BC(maxx + j, width),
+                        ]
+                        == len(self.data.contours) + 1
+                    ):
+                        label[
+                            LinesUtil.BR(maxy + i, height),
+                            LinesUtil.BC(maxx + j, width),
+                        ] = 0
 
         if self.extend_line:
             self.extend_lines(label, filtered_data)
 
         # Adjust angles to point to the right of the line
-        for i in range(num_cont):
-            tmp_cont = self.data.contours[i]
-            num_pnt = tmp_cont.num
-            if num_pnt > 1:
-                k = (num_pnt - 1) // 2
-                dy, dx = (
-                    tmp_cont.row[k + 1] - tmp_cont.row[k],
-                    tmp_cont.col[k + 1] - tmp_cont.col[k],
-                )
-                ny, nx = np.sin(tmp_cont.angle[k]), np.cos(tmp_cont.angle[k])
+        for contour in self.data.contours:
+            if len(contour) > 1:
+                k = (len(contour) - 1) // 2
+                dy = contour.row[k + 1] - contour.row[k]
+                dx = contour.col[k + 1] - contour.col[k]
+                ny = np.sin(contour.angle[k])
+                nx = np.cos(contour.angle[k])
 
                 # If angles point to the left of the line, they have to be adapted
                 if ny * dx - nx * dy < 0:
-                    tmp_cont.angle = np.array(
-                        [(ang + np.pi) % (2 * np.pi) for ang in tmp_cont.angle]
+                    contour.angle = np.array(
+                        [(ang + np.pi) % (2 * np.pi) for ang in contour.angle]
                     )
 
     def compute_line_width(self, filtered_data: FilteredData):

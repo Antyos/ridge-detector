@@ -315,35 +315,32 @@ class RidgeDetector:
         if self.data is None:
             raise ValueError("Ridge data is not initialized.")
         height, width = label.shape[:2]
-        num_junc = len(self.data.junctions)
         s = self.mode.value
         length = 2.5 * filtered_data.sigma_map
         max_line = np.ceil(length * 1.2).astype(int)
-        num_cont = len(self.data.contours)
-        for idx_cont in range(num_cont):
-            tmp_cont = self.data.contours[idx_cont]
-            num_pnt = tmp_cont.num
+        for idx_cont, contour in enumerate(self.data.contours):
+            num_pnt = contour.num
             if (
-                num_pnt == 1
-                or tmp_cont.get_contour_class() == LinesUtil.ContourClass.cont_closed
+                len(contour) == 1
+                or contour.get_contour_class() == LinesUtil.ContourClass.cont_closed
             ):
                 continue
 
             # Assign initial values for m and j so they aren't unbound
-            m = 0
+            other_contour_idx = 0
+            other_contour = None
             j = 0
             end_angle = 0
             end_resp = 0
             # Check both ends of the line (it==-1: start, it==1: end).
             for it in [-1, 1]:
+                trow = contour.row
+                tcol = contour.col
+                tangle = contour.angle
+                tresp = contour.response
                 if it == -1:
-                    trow = tmp_cont.row
-                    tcol = tmp_cont.col
-                    tangle = tmp_cont.angle
-                    tresp = tmp_cont.response
-
                     # Start point of the line.
-                    if tmp_cont.get_contour_class() in [
+                    if contour.get_contour_class() in [
                         LinesUtil.ContourClass.cont_start_junc,
                         LinesUtil.ContourClass.cont_both_junc,
                     ]:
@@ -360,21 +357,14 @@ class RidgeDetector:
                     py, px = trow[0], tcol[0]
                     response = tresp[0]
                 else:
-                    trow = tmp_cont.row
-                    tcol = tmp_cont.col
-                    tangle = tmp_cont.angle
-                    tresp = tmp_cont.response
-
                     # End point of the line.
-                    if tmp_cont.get_contour_class() in [
+                    if contour.get_contour_class() in [
                         LinesUtil.ContourClass.cont_end_junc,
                         LinesUtil.ContourClass.cont_both_junc,
                     ]:
                         continue
-                    dy, dx = (
-                        trow[num_pnt - 1] - trow[num_pnt - 2],
-                        tcol[num_pnt - 1] - tcol[num_pnt - 2],
-                    )
+                    dy = trow[num_pnt - 1] - trow[num_pnt - 2]
+                    dx = tcol[num_pnt - 1] - tcol[num_pnt - 2]
                     alpha = tangle[num_pnt - 1]
                     ny, nx = np.sin(alpha), np.cos(alpha)
                     if ny * dx - nx * dy < 0:
@@ -389,18 +379,11 @@ class RidgeDetector:
                 # Determine the current pixel and calculate the pixels on the search line.
                 y, x = int(py + 0.5), int(px + 0.5)
                 dy, dx = py - y, px - x
-                line = bresenham(
-                    my,
-                    mx,
-                    max_line[LinesUtil.BR(y, height), LinesUtil.BC(x, width)],
-                    dy,
-                    dx,
-                )
+                line_length = max_line[LinesUtil.BR(y, height), LinesUtil.BC(x, width)]
+                line = bresenham(my, mx, line_length, dy, dx)
                 num_line = line.shape[0]
-                exty, extx = (
-                    np.zeros(num_line, dtype=int),
-                    np.zeros(num_line, dtype=int),
-                )
+                exty = np.zeros(num_line, dtype=int)
+                extx = np.zeros(num_line, dtype=int)
 
                 # Now determine whether we can go only uphill (bright lines)
                 # or downhill (dark lines) until we hit another line.
@@ -436,18 +419,19 @@ class RidgeDetector:
                         break
                     # Have we hit another line?
                     if label[nexty, nextx] > 0:
-                        m = label[nexty, nextx] - 1
+                        other_contour_idx = label[nexty, nextx] - 1
+                        other_contour = self.data.contours[other_contour_idx]
                         # Search for the junction point on the other line.
                         dist = np.sqrt(
-                            (nextpy - self.data.contours[m].row) ** 2
-                            + (nextpx - self.data.contours[m].col) ** 2
+                            (nextpy - other_contour.row) ** 2
+                            + (nextpx - other_contour.col) ** 2
                         )
                         j = np.argmin(dist)
 
-                        exty[num_add] = self.data.contours[m].row[j]
-                        extx[num_add] = self.data.contours[m].col[j]
-                        end_resp = self.data.contours[m].response[j]
-                        end_angle = self.data.contours[m].angle[j]
+                        exty[num_add] = other_contour.row[j]
+                        extx[num_add] = other_contour.col[j]
+                        end_resp = other_contour.response[j]
+                        end_angle = other_contour.angle[j]
                         beta = end_angle
                         if beta >= np.pi:
                             beta -= np.pi
@@ -476,87 +460,78 @@ class RidgeDetector:
                     new_angle = np.zeros(num_pnt, dtype=float)
                     new_resp = np.zeros(num_pnt, dtype=float)
 
-                    tmp_cont.row = new_row
-                    tmp_cont.col = new_col
-                    tmp_cont.angle = new_angle
-                    tmp_cont.response = new_resp
+                    contour.row = new_row
+                    contour.col = new_col
+                    contour.angle = new_angle
+                    contour.response = new_resp
                     if it == -1:
-                        tmp_cont.row[num_add:] = trow
-                        tmp_cont.row[:num_add] = exty[:num_add][::-1]
-                        tmp_cont.col[num_add:] = tcol
-                        tmp_cont.col[:num_add] = extx[:num_add][::-1]
-                        tmp_cont.angle[num_add:] = tangle
-                        tmp_cont.angle[:num_add] = float(alpha)
-                        tmp_cont.response[num_add:] = tresp
-                        tmp_cont.response[:num_add] = float(response)
-                        tmp_cont.angle[0] = end_angle
-                        tmp_cont.response[0] = end_resp
+                        contour.row[num_add:] = trow
+                        contour.row[:num_add] = exty[:num_add][::-1]
+                        contour.col[num_add:] = tcol
+                        contour.col[:num_add] = extx[:num_add][::-1]
+                        contour.angle[num_add:] = tangle
+                        contour.angle[:num_add] = float(alpha)
+                        contour.response[num_add:] = tresp
+                        contour.response[:num_add] = float(response)
+                        contour.angle[0] = end_angle
+                        contour.response[0] = end_resp
                         # Adapt indices of the previously found junctions.
-                        for k in range(num_junc):
+                        for k in range(len(self.data.junctions)):
                             if self.data.junctions[k].cont1 == idx_cont:
                                 self.data.junctions[k].pos += num_add
                     else:
                         # Insert points at the end of the line.
-                        tmp_cont.row[: num_pnt - num_add] = trow
-                        tmp_cont.row[num_pnt - num_add :] = exty[:num_add]
-                        tmp_cont.col[: num_pnt - num_add] = tcol
-                        tmp_cont.col[num_pnt - num_add :] = extx[:num_add]
-                        tmp_cont.angle[: num_pnt - num_add] = tangle
-                        tmp_cont.angle[num_pnt - num_add :] = float(alpha)
-                        tmp_cont.response[: num_pnt - num_add] = tresp
-                        tmp_cont.response[num_pnt - num_add :] = float(response)
-                        tmp_cont.angle[-1] = end_angle
-                        tmp_cont.response[-1] = end_resp
+                        contour.row[: num_pnt - num_add] = trow
+                        contour.row[num_pnt - num_add :] = exty[:num_add]
+                        contour.col[: num_pnt - num_add] = tcol
+                        contour.col[num_pnt - num_add :] = extx[:num_add]
+                        contour.angle[: num_pnt - num_add] = tangle
+                        contour.angle[num_pnt - num_add :] = float(alpha)
+                        contour.response[: num_pnt - num_add] = tresp
+                        contour.response[num_pnt - num_add :] = float(response)
+                        contour.angle[-1] = end_angle
+                        contour.response[-1] = end_resp
 
                     # Add the junction point only if it is not one of the other line's endpoints.
-                    if 0 < j < self.data.contours[m].num - 1:
+                    if other_contour is not None and 0 < j < other_contour.num - 1:
                         if it == -1:
                             if (
-                                tmp_cont.get_contour_class()
+                                contour.get_contour_class()
                                 == LinesUtil.ContourClass.cont_end_junc
                             ):
-                                tmp_cont.set_contour_class(
+                                contour.set_contour_class(
                                     LinesUtil.ContourClass.cont_both_junc
                                 )
                             else:
-                                tmp_cont.set_contour_class(
+                                contour.set_contour_class(
                                     LinesUtil.ContourClass.cont_start_junc
                                 )
                         else:
                             if (
-                                tmp_cont.get_contour_class()
+                                contour.get_contour_class()
                                 == LinesUtil.ContourClass.cont_start_junc
                             ):
-                                tmp_cont.set_contour_class(
+                                contour.set_contour_class(
                                     LinesUtil.ContourClass.cont_both_junc
                                 )
                             else:
-                                tmp_cont.set_contour_class(
+                                contour.set_contour_class(
                                     LinesUtil.ContourClass.cont_end_junc
                                 )
 
                         if it == -1:
-                            self.data.junctions.append(
-                                Junction(
-                                    int(m),
-                                    idx_cont,
-                                    int(j),
-                                    tmp_cont.row[0],
-                                    tmp_cont.col[0],
-                                )
-                            )
+                            contour_idx = 0
                         else:
-                            self.data.junctions.append(
-                                Junction(
-                                    int(m),
-                                    idx_cont,
-                                    int(j),
-                                    tmp_cont.row[num_pnt - 1],
-                                    tmp_cont.col[num_pnt - 1],
-                                )
+                            contour_idx = num_pnt - 1
+                        self.data.junctions.append(
+                            Junction(
+                                int(other_contour_idx),
+                                int(idx_cont),
+                                int(j),
+                                contour.row[contour_idx],
+                                contour.col[contour_idx],
                             )
-
-                        num_junc += 1
+                        )
             return self.data.junctions
 
     def compute_contours(self, filtered_data: FilteredData, line_points: LinePoints):
@@ -1250,5 +1225,5 @@ if __name__ == "__main__":
     detector.detect_lines(Path(__file__).parent.parent / "data/images/img2.jpg")
     detector.show_results()
     # plt.imshow(detector.data.eigvals)
-    plt.show()
+    # plt.show()
     # detector.save_results("../data/results/", prefix="img7")

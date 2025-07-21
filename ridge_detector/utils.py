@@ -1,6 +1,7 @@
 import colorsys
 import math
 import random
+from collections.abc import Sequence
 from enum import Enum
 from typing import Optional
 
@@ -13,8 +14,47 @@ from scipy.ndimage import convolve, gaussian_filter1d
 from .constants import LINE_WIDTH_COMPENSATION
 from .correct import Correct
 
-ArrayLikeInt = int | np.integer | NDArray[np.integer]
-ArrayLikeFloat = float | np.floating | NDArray[np.floating]
+ArrayLikeInt = int | np.integer | NDArray[np.integer] | Sequence[int]
+ArrayLikeFloat = float | np.floating | NDArray[np.floating] | Sequence[float]
+
+
+class LineData:
+    row: list[int]
+    col: list[int]
+    angle: list[float]
+    response: list[float]
+
+    def __init__(self, row=None, col=None, angle=None, resp=None):
+        self.row = row if row is not None else []
+        self.col = col if col is not None else []
+        self.angle = angle if angle is not None else []
+        self.response = resp if resp is not None else []
+
+    def append(self, row, col, angle, response):
+        self.row.append(row)
+        self.col.append(col)
+        self.angle.append(angle)
+        self.response.append(response)
+
+    def reverse(self):
+        """Reverse the order of points in the line data."""
+        self.row.reverse()
+        self.col.reverse()
+        self.angle.reverse()
+        self.response.reverse()
+
+    def __len__(self):
+        return len(self.row)
+
+    def to_line(self, contour_class: Optional["LinesUtil.ContourClass"] = None):
+        """Convert LineData to Line object."""
+        return Line(
+            row=self.row,
+            col=self.col,
+            angle=self.angle,
+            response=self.response,
+            contour_class=contour_class,
+        )
 
 
 class Line:

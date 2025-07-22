@@ -234,7 +234,6 @@ class RidgeData:
 
         contours_image = self.get_image_contours(show_width=False)
         iio.imwrite(save_dir / f"{prefix}_contours.png", contours_image)
-
         if draw_width:
             contours_image = self.get_image_contours(show_width=True)
             iio.imwrite(save_dir / f"{prefix}_contours_widths.png", contours_image)
@@ -251,10 +250,57 @@ class RidgeData:
         if make_binary:
             binary_contours = self.get_binary_contours()
             iio.imwrite(save_dir / f"{prefix}_binary_contours.png", binary_contours)
-
             if draw_width:
                 binary_width = self.get_binary_widths()
                 iio.imwrite(save_dir / f"{prefix}_binary_widths.png", binary_width)
+
+    def to_dataframe(self):
+        """Get a DataFrame representation of the contours based on the Results table.
+
+        Pandas is required for this method to work. If it is not installed, an
+        ImportError will be raised.
+
+        Returns
+        -------
+        results : pd.DataFrame
+            DataFrame columns:
+            - contour_id (int) : Unique identifier for the contour
+            - position (int) : Segment position in the contour
+            - x (float) : X coordinate of the segment
+            - y (float) : Y coordinate of the segment
+            - length (float) : Length of the segment
+            - line_width (float) : Width of the segment
+            - angle_of_normal (float) : Angle of the normal vector to the segment
+            - class (str) : Contour class name
+        """
+        try:
+            import pandas as pd
+        except ImportError:
+            raise ImportError(
+                "pandas is required to convert RidgeData to DataFrame. "
+                "Please install it with 'pip install pandas'."
+            )
+        contour_dicts = []
+        for contour in self.contours:
+            contour_dicts.append(
+                {
+                    "contour_id": contour.id,
+                    "position": list(range(contour.num)),
+                    "x": contour.col,
+                    "y": contour.row,
+                    "length": contour.estimate_length(),
+                    "line_width": contour.estimate_width(),
+                    "angle_of_normal": contour.angle,
+                    "class": contour.get_contour_class_str(),
+                }
+            )
+        contour_data = {
+            key: list(
+                itertools.chain.from_iterable(contour[key] for contour in contour_dicts)
+            )
+            for key in contour_dicts[0].keys()
+        }
+        return pd.DataFrame(contour_data)
 
 
 class RidgeDetector:
@@ -1143,7 +1189,7 @@ class RidgeDetector:
         return ridge_data
 
     def prune_contours(self, ridge_data: RidgeData) -> RidgeData:
-        if self.min_len <= 0:
+        if self.min_len < 0:
             return ridge_data
 
         id_remove = []

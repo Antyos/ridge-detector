@@ -290,14 +290,16 @@ class RidgeData:
         for contour in self.contours:
             contour_dicts.append(
                 {
-                    "contour_id": contour.id,
+                    "contour_id": itertools.repeat(contour.id, contour.num),
                     "position": list(range(contour.num)),
                     "x": contour.col,
                     "y": contour.row,
-                    "length": contour.estimate_length(),
+                    "length": itertools.repeat(contour.estimate_length(), contour.num),
                     "line_width": contour.estimate_width(),
                     "angle_of_normal": contour.angle,
-                    "class": contour.get_contour_class_str(),
+                    "class": itertools.repeat(
+                        contour.get_contour_class_str(), contour.num
+                    ),
                 }
             )
         contour_data = {

@@ -203,14 +203,15 @@ class Line:
         dist_end = ((self.col[-1] - x) ** 2 + (self.row[-1] - y) ** 2) ** 0.5
         return 0 if dist_start < dist_end else self.num - 1
 
-    def estimate_length(self):
+    def estimate_length(self) -> float:
+        """Get the total length of the contour."""
         col_diff = np.diff(self.col)
         row_diff = np.diff(self.row)
         length = np.sum(np.sqrt(col_diff**2 + row_diff**2))
         return length
 
-    def estimate_width(self):
-        """Estimate the width of the line based on the left and right widths."""
+    def estimate_width(self) -> NDArray[np.floating]:
+        """Estimate the width of the line at each segment."""
         if self.width_l is not None and self.width_r is not None:
             return self.width_l + self.width_r
         return np.zeros(self.num, dtype=np.float32)

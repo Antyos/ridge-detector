@@ -226,33 +226,38 @@ class RidgeData:
         make_binary: bool = True,
         draw_junc: bool = False,
         draw_width: bool = True,
+        extension: str = "png",
     ):
         if save_dir is None:
             save_dir = Path.cwd()
         elif isinstance(save_dir, str):
             save_dir = Path(save_dir)
 
+        if extension.startswith("."):
+            extension = extension[1:]
+
+        def file_path(suffix: str):
+            return save_dir / f"{prefix}_{suffix}.{extension}"
+
         contours_image = self.get_image_contours(show_width=False)
-        iio.imwrite(save_dir / f"{prefix}_contours.png", contours_image)
+        iio.imwrite(file_path("contours"), contours_image)
         if draw_width:
             contours_image = self.get_image_contours(show_width=True)
-            iio.imwrite(save_dir / f"{prefix}_contours_widths.png", contours_image)
+            iio.imwrite(file_path("contours_widths"), contours_image)
 
         if draw_junc:
             for junc in self.junctions:
                 contours_image = cv2.circle(
                     contours_image, (round(junc.x), round(junc.y)), 2, (0, 255, 255), -1
                 )
-            iio.imwrite(
-                save_dir / f"{prefix}_contours_widths_junctions.png", contours_image
-            )
+            iio.imwrite(file_path("contours_widths_junctions"), contours_image)
 
         if make_binary:
             binary_contours = self.get_binary_contours()
-            iio.imwrite(save_dir / f"{prefix}_binary_contours.png", binary_contours)
+            iio.imwrite(file_path("binary_contours"), binary_contours)
             if draw_width:
                 binary_width = self.get_binary_widths()
-                iio.imwrite(save_dir / f"{prefix}_binary_widths.png", binary_width)
+                iio.imwrite(file_path("binary_widths"), binary_width)
 
     def to_dataframe(self):
         """Get a DataFrame representation of the contours based on the Results table.

@@ -126,43 +126,6 @@ class RidgeData:
         """Return the height of the image."""
         return self.gray.shape[-2]
 
-    def export_images(
-        self,
-        save_dir: Optional[str | Path] = None,
-        prefix: str = "",
-        make_binary: bool = True,
-        draw_junc: bool = False,
-        draw_width: bool = True,
-    ):
-        if save_dir is None:
-            save_dir = Path.cwd()
-        elif isinstance(save_dir, str):
-            save_dir = Path(save_dir)
-
-        contours_image = self.get_image_contours(show_width=False)
-        iio.imwrite(save_dir / f"{prefix}_contours.png", contours_image)
-
-        if draw_width:
-            contours_image = self.get_image_contours(show_width=True)
-            iio.imwrite(save_dir / f"{prefix}_contours_widths.png", contours_image)
-
-        if draw_junc:
-            for junc in self.junctions:
-                contours_image = cv2.circle(
-                    contours_image, (round(junc.x), round(junc.y)), 2, (0, 255, 255), -1
-                )
-            iio.imwrite(
-                save_dir / f"{prefix}_contours_widths_junctions.png", contours_image
-            )
-
-        if make_binary:
-            binary_contours = self.get_binary_contours()
-            iio.imwrite(save_dir / f"{prefix}_binary_contours.png", binary_contours)
-
-            if draw_width:
-                binary_width = self.get_binary_widths()
-                iio.imwrite(save_dir / f"{prefix}_binary_widths.png", binary_width)
-
     @property
     def contour_points(self):
         if self._contour_points is not None:
@@ -255,6 +218,43 @@ class RidgeData:
             mask = ski.draw.polygon2mask(self.shape, poly_points[:, [1, 0]])
             binary_image[mask] = 0
         return binary_image
+
+    def export_images(
+        self,
+        save_dir: Optional[str | Path] = None,
+        prefix: str = "",
+        make_binary: bool = True,
+        draw_junc: bool = False,
+        draw_width: bool = True,
+    ):
+        if save_dir is None:
+            save_dir = Path.cwd()
+        elif isinstance(save_dir, str):
+            save_dir = Path(save_dir)
+
+        contours_image = self.get_image_contours(show_width=False)
+        iio.imwrite(save_dir / f"{prefix}_contours.png", contours_image)
+
+        if draw_width:
+            contours_image = self.get_image_contours(show_width=True)
+            iio.imwrite(save_dir / f"{prefix}_contours_widths.png", contours_image)
+
+        if draw_junc:
+            for junc in self.junctions:
+                contours_image = cv2.circle(
+                    contours_image, (round(junc.x), round(junc.y)), 2, (0, 255, 255), -1
+                )
+            iio.imwrite(
+                save_dir / f"{prefix}_contours_widths_junctions.png", contours_image
+            )
+
+        if make_binary:
+            binary_contours = self.get_binary_contours()
+            iio.imwrite(save_dir / f"{prefix}_binary_contours.png", binary_contours)
+
+            if draw_width:
+                binary_width = self.get_binary_widths()
+                iio.imwrite(save_dir / f"{prefix}_binary_widths.png", binary_width)
 
 
 class RidgeDetector:

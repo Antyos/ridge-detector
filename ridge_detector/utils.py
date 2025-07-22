@@ -3,7 +3,7 @@ import math
 import random
 from collections.abc import Sequence
 from enum import Enum
-from typing import Optional
+from typing import NamedTuple, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -57,6 +57,20 @@ class LineData:
         )
 
 
+class PointData(NamedTuple):
+    """Data structure to hold point information."""
+
+    x: float
+    y: float
+    angle: float
+    response: float
+    width_l: float
+    width_r: float
+    asymmetry: float
+    intensity: float
+    contour_class: Optional["LinesUtil.ContourClass"] = None
+
+
 class Line:
     id_counter = 0  # Class variable for tracking ID
 
@@ -97,6 +111,20 @@ class Line:
 
     def __len__(self):
         return len(self.row)
+
+    def __iter__(self):
+        for i in range(len(self)):
+            yield PointData(
+                x=self.col[i],
+                y=self.row[i],
+                angle=self.angle[i],
+                response=self.response[i],
+                width_l=self.width_l[i] if self.width_l is not None else 0.0,
+                width_r=self.width_r[i] if self.width_r is not None else 0.0,
+                asymmetry=self.asymmetry[i] if self.asymmetry is not None else 0.0,
+                intensity=self.intensity[i] if self.intensity is not None else 0.0,
+                contour_class=self.contour_class,
+            )
 
     @property
     def num(self):

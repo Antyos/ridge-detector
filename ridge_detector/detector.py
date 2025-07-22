@@ -124,6 +124,97 @@ class RidgeData:
         """Return the height of the image."""
         return self.gray.shape[-2]
 
+    def save_results(
+        self,
+        save_dir=None,
+        prefix="",
+        make_binary=True,
+        draw_junc=False,
+        draw_width=True,
+    ):
+        all_contour_points, all_width_left, all_width_right = [], [], []
+        for cont in self.contours:
+            num_points = cont.num
+            contour_points, width_left, width_right = [], [], []
+
+            for j in range(num_points):
+                px, py = cont.col[j], cont.row[j]
+                nx, ny = np.cos(cont.angle[j]), np.sin(cont.angle[j])
+                contour_points.append([round(px), round(py)])
+
+                if draw_width:
+                    px_r, py_r = px + cont.width_r[j] * nx, py + cont.width_r[j] * ny
+                    px_l, py_l = px - cont.width_l[j] * nx, py - cont.width_l[j] * ny
+
+                    # if last_w_r > 0 and cont.width_r[j] > 0:
+                    width_right.append([round(px_r), round(py_r)])
+
+                    # if last_w_l > 0 and cont.width_l[j] > 0:
+                    width_left.append([round(px_l), round(py_l)])
+
+            all_contour_points.append(np.array(contour_points))
+            if draw_width:
+                all_width_right.append(np.array(width_right))
+                all_width_left.append(np.array(width_left))
+
+        if save_dir is None:
+            save_dir = os.getcwd()
+
+        result_img = (
+            self.image.copy()
+            if self.image.ndim > 2
+            else np.repeat(self.image[:, :, None], 3, axis=2)
+        )
+
+        img = cv2.polylines(result_img, all_contour_points, False, (255, 0, 0))
+        iio.imwrite(os.path.join(save_dir, f"{prefix}_contours.png"), img)
+
+        if draw_width:
+            img = cv2.polylines(img, all_width_right, False, (0, 255, 0))
+            img = cv2.polylines(img, all_width_left, False, (0, 255, 0))
+            iio.imwrite(os.path.join(save_dir, f"{prefix}_contours_widths.png"), img)
+
+        if draw_junc:
+            for junc in self.junctions:
+                img = cv2.circle(
+                    img, (round(junc.x), round(junc.y)), 2, (0, 255, 255), -1
+                )
+            iio.imwrite(
+                os.path.join(save_dir, f"{prefix}_contours_widths_junctions.png"), img
+            )
+
+        if make_binary:
+            height, width = self.image.shape[:2]
+            binary_contours = np.ones((height, width), dtype=np.uint8) * 255
+
+            for contour_points in all_contour_points:
+                for points in contour_points:
+                    binary_contours[
+                        min([points[1], height - 1]), min([points[0], width - 1])
+                    ] = 0
+            iio.imwrite(
+                os.path.join(save_dir, f"{prefix}_binary_contours.png"), binary_contours
+            )
+
+            if draw_width:
+                binary_width = np.ones((height, width), dtype=np.uint8) * 255
+                for width_left, width_right in zip(all_width_left, all_width_right):
+                    poly_points = np.concatenate(
+                        (width_left, width_right[::-1, :]), axis=0
+                    )
+                    mask = ski.draw.polygon2mask(
+                        (height, width), poly_points[:, [1, 0]]
+                    )
+                    binary_width[mask] = 0
+                iio.imwrite(
+                    os.path.join(save_dir, f"{prefix}_binary_widths.png"), binary_width
+                )
+
+    def plot_image_contours(self, ax): ...
+    def plot_image_widths(self, ax): ...
+    def plot_binary_contours(self, ax): ...
+    def plot_binary_widths(self, ax): ...
+
 
 class RidgeDetector:
     data: Optional[RidgeData] = None
@@ -1033,7 +1124,7 @@ class RidgeDetector:
 
     def detect_lines(self, image):
         image = iio.imread(image) if isinstance(image, (str, Path)) else image
-        data = RidgeData(image=image, estimate_width=self.estimate_width)
+        data = RidgeData(image=image)
 
         filtered_data = self.apply_filtering(data)
         line_points = self.compute_line_points(data, filtered_data)
@@ -1054,83 +1145,13 @@ class RidgeDetector:
     ):
         if self.data is None:
             raise ValueError("Ridge data is not initialized.")
-        all_contour_points, all_width_left, all_width_right = [], [], []
-        for cont in self.data.contours:
-            num_points = cont.num
-            contour_points, width_left, width_right = [], [], []
-
-            for j in range(num_points):
-                px, py = cont.col[j], cont.row[j]
-                nx, ny = np.cos(cont.angle[j]), np.sin(cont.angle[j])
-                contour_points.append([round(px), round(py)])
-
-                if draw_width and self.estimate_width:
-                    px_r, py_r = px + cont.width_r[j] * nx, py + cont.width_r[j] * ny
-                    px_l, py_l = px - cont.width_l[j] * nx, py - cont.width_l[j] * ny
-
-                    # if last_w_r > 0 and cont.width_r[j] > 0:
-                    width_right.append([round(px_r), round(py_r)])
-
-                    # if last_w_l > 0 and cont.width_l[j] > 0:
-                    width_left.append([round(px_l), round(py_l)])
-
-            all_contour_points.append(np.array(contour_points))
-            if draw_width and self.estimate_width:
-                all_width_right.append(np.array(width_right))
-                all_width_left.append(np.array(width_left))
-
-        if save_dir is None:
-            save_dir = os.getcwd()
-
-        result_img = (
-            self.data.image.copy()
-            if self.data.image.ndim > 2
-            else np.repeat(self.data.image[:, :, None], 3, axis=2)
+        return self.data.save_results(
+            save_dir=save_dir,
+            prefix=prefix,
+            make_binary=make_binary,
+            draw_junc=draw_junc,
+            draw_width=draw_width and self.estimate_width,
         )
-
-        img = cv2.polylines(result_img, all_contour_points, False, (255, 0, 0))
-        iio.imwrite(os.path.join(save_dir, f"{prefix}_contours.png"), img)
-
-        if draw_width and self.estimate_width:
-            img = cv2.polylines(img, all_width_right, False, (0, 255, 0))
-            img = cv2.polylines(img, all_width_left, False, (0, 255, 0))
-            iio.imwrite(os.path.join(save_dir, f"{prefix}_contours_widths.png"), img)
-
-        if draw_junc:
-            for junc in self.data.junctions:
-                img = cv2.circle(
-                    img, (round(junc.x), round(junc.y)), 2, (0, 255, 255), -1
-                )
-            iio.imwrite(
-                os.path.join(save_dir, f"{prefix}_contours_widths_junctions.png"), img
-            )
-
-        if make_binary:
-            height, width = self.data.image.shape[:2]
-            binary_contours = np.ones((height, width), dtype=np.uint8) * 255
-
-            for contour_points in all_contour_points:
-                for points in contour_points:
-                    binary_contours[
-                        min([points[1], height - 1]), min([points[0], width - 1])
-                    ] = 0
-            iio.imwrite(
-                os.path.join(save_dir, f"{prefix}_binary_contours.png"), binary_contours
-            )
-
-            if draw_width and self.estimate_width:
-                binary_width = np.ones((height, width), dtype=np.uint8) * 255
-                for width_left, width_right in zip(all_width_left, all_width_right):
-                    poly_points = np.concatenate(
-                        (width_left, width_right[::-1, :]), axis=0
-                    )
-                    mask = ski.draw.polygon2mask(
-                        (height, width), poly_points[:, [1, 0]]
-                    )
-                    binary_width[mask] = 0
-                iio.imwrite(
-                    os.path.join(save_dir, f"{prefix}_binary_widths.png"), binary_width
-                )
 
     def show_results(self):
         if self.data is None:

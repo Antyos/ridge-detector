@@ -192,9 +192,9 @@ class RidgeData:
         )
         image = cv2.polylines(copied_image, self.contour_points, False, contour_color)
         if show_width:
-            width_left, width_right = self.width_points
-            image = cv2.polylines(image, width_right, False, width_color)
-            image = cv2.polylines(image, width_left, False, width_color)
+            left_edge, right_edge = self.width_points
+            image = cv2.polylines(image, right_edge, False, width_color)
+            image = cv2.polylines(image, left_edge, False, width_color)
         return image
 
     def get_binary_contours(self):
@@ -1203,15 +1203,15 @@ class RidgeDetector:
             axes[0, 0].set_title("contours")
             axes[0, 1].imshow(self.data.get_image_contours(show_width=True))
             axes[0, 1].set_title("contours and widths")
-            axes[1, 0].imshow(self.data.get_binary_contours())
+            axes[1, 0].imshow(self.data.get_binary_contours(), cmap="gray")
             axes[1, 0].set_title("binary contours")
-            axes[1, 1].imshow(self.data.get_binary_widths())
+            axes[1, 1].imshow(self.data.get_binary_widths(), cmap="gray")
             axes[1, 1].set_title("binary widths")
         else:
             fig, axes = plt.subplots(1, 2, figsize=(figsize, figsize / 2))
             axes[0].imshow(self.data.get_image_contours(show_width=False))
             axes[0].set_title("contours")
-            axes[1].imshow(self.data.get_binary_contours())
+            axes[1].imshow(self.data.get_binary_contours(), cmap="gray")
             axes[1].set_title("binary contours")
         if show:
             plt.show()

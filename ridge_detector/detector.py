@@ -24,6 +24,7 @@ from ridge_detector.constants import (
     kernel_rr,
 )
 from ridge_detector.utils import (
+    ArrayLikeInt,
     Crossref,
     Junction,
     Line,
@@ -313,15 +314,15 @@ class RidgeDetector:
 
     def __init__(
         self,
-        line_widths=np.arange(1, 3),
-        low_contrast=100,
-        high_contrast=200,
-        min_len=5,
-        max_len=0,
-        dark_line=True,
-        estimate_width=True,
-        extend_line=False,
-        correct_pos=False,
+        line_widths: ArrayLikeInt = np.arange(1, 3),
+        low_contrast: int = 100,
+        high_contrast: int = 200,
+        min_len: int = 5,
+        max_len: int = 0,
+        dark_line: bool = True,
+        estimate_width: bool = True,
+        extend_line: bool = False,
+        correct_pos: bool = False,
     ):
         self.low_contrast = low_contrast
         self.high_contrast = high_contrast
@@ -331,6 +332,11 @@ class RidgeDetector:
         self.estimate_width = estimate_width
         self.extend_line = extend_line
         self.correct_pos = correct_pos
+
+        # np.isscalar() should cover all the cases we need, but we add the isinstance
+        # check for the type checker.
+        if np.isscalar(line_widths) or isinstance(line_widths, (int, np.integer)):
+            line_widths = np.array([line_widths], dtype=int)
 
         # Calculate sigmas for multiscale detection
         self.sigmas = np.array([lw / (2 * np.sqrt(3)) + 0.5 for lw in line_widths])
@@ -1214,7 +1220,7 @@ class RidgeDetector:
         ridge_data.junctions = pruned_junctions
         return ridge_data
 
-    def detect_lines(self, image):
+    def detect_lines(self, image: str | Path | NDArray):
         image = iio.imread(image) if isinstance(image, (str, Path)) else image
         data = RidgeData(image=image)
 

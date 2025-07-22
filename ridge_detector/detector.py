@@ -948,8 +948,8 @@ class RidgeDetector:
             + pp2 * pp2 * grad_dcc
         )
 
-        for i, cont in enumerate(self.data.contours):
-            num_points = cont.num
+        for contour in self.data.contours:
+            num_points = len(contour)
             width_l = np.zeros(num_points, dtype=float)
             width_r = np.zeros(num_points, dtype=float)
             grad_l = np.zeros(num_points, dtype=float)
@@ -958,10 +958,10 @@ class RidgeDetector:
             pos_y = np.zeros(num_points, dtype=float)
 
             for j in range(num_points):
-                py, px = cont.row[j], cont.col[j]
+                py, px = contour.row[j], contour.col[j]
                 pos_y[j], pos_x[j] = py, px
                 r, c = LinesUtil.BR(round(py), height), LinesUtil.BC(round(px), width)
-                ny, nx = np.sin(cont.angle[j]), np.cos(cont.angle[j])
+                ny, nx = np.sin(contour.angle[j]), np.cos(contour.angle[j])
 
                 line = bresenham(ny, nx, max_length[r, c])
                 num_line = line.shape[0]
@@ -989,7 +989,7 @@ class RidgeDetector:
                                     width_l[j] = abs(t)
                                 break
             fix_locations(
-                cont,
+                contour,
                 width_l,
                 width_r,
                 grad_l,
@@ -1008,21 +1008,20 @@ class RidgeDetector:
             return
 
         id_remove = []
-        conts = []
+        pruned_contours = []
         for i in range(len(self.data.contours)):
             cont_len = self.data.contours[i].estimate_length()
             if cont_len < self.min_len or (0 < self.max_len < cont_len):
                 id_remove.append(self.data.contours[i].id)
             else:
-                conts.append(self.data.contours[i])
-
-        juncs = []
-        for junc in self.data.junctions:
-            if junc.cont1 not in id_remove and junc.cont2 not in id_remove:
-                juncs.append(junc)
-
-        self.data.contours = conts
-        self.data.junctions = juncs
+                pruned_contours.append(self.data.contours[i])
+        pruned_junctions = [
+            j
+            for j in self.data.junctions
+            if j.cont1 not in id_remove and j.cont2 not in id_remove
+        ]
+        self.data.contours = pruned_contours
+        self.data.junctions = pruned_junctions
 
     def detect_lines(self, image):
         image = iio.imread(image) if isinstance(image, (str, Path)) else image

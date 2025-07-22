@@ -156,6 +156,12 @@ class Line:
     def get_contour_class(self):
         return self.contour_class
 
+    def get_contour_class_str(self):
+        if self.contour_class:
+            # Return the name of the contour class without the prefix "cont_"
+            return self.contour_class.name[self.contour_class.name.find("_") + 1 :]
+        return "none"
+
     def set_contour_class(self, contour_class):
         self.contour_class = contour_class
 
@@ -198,13 +204,16 @@ class Line:
         return 0 if dist_start < dist_end else self.num - 1
 
     def estimate_length(self):
-        length = 0
-        for i in range(1, self.num):
-            length += (
-                (self.col[i] - self.col[i - 1]) ** 2
-                + (self.row[i] - self.row[i - 1]) ** 2
-            ) ** 0.5
+        col_diff = np.diff(self.col)
+        row_diff = np.diff(self.row)
+        length = np.sum(np.sqrt(col_diff**2 + row_diff**2))
         return length
+
+    def estimate_width(self):
+        """Estimate the width of the line based on the left and right widths."""
+        if self.width_l is not None and self.width_r is not None:
+            return self.width_l + self.width_r
+        return np.zeros(self.num, dtype=np.float32)
 
     @classmethod
     def reset_counter(cls):

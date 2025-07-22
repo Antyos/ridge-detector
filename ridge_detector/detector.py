@@ -140,7 +140,7 @@ class RidgeData:
                 ]
                 for pt in contour
             ]
-            all_contour_points.append(np.array(contour_points))
+            all_contour_points.append(np.array(contour_points, dtype=int))
         self._contour_points = all_contour_points
         return self._contour_points
 
@@ -172,8 +172,8 @@ class RidgeData:
                     px_r = np.round(pt.x + pt.width_r * nx)
                     py_r = np.round(pt.y + pt.width_r * ny)
                     right_edge.append([px_r, py_r])
-            all_left_edges.append(np.array(left_edge))
-            all_right_edges.append(np.array(right_edge))
+            all_left_edges.append(np.array(left_edge, dtype=int))
+            all_right_edges.append(np.array(right_edge, dtype=int))
 
         self._width_points = (all_left_edges, all_right_edges)
         return self._width_points

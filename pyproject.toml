@@ -42,3 +42,8 @@ path = "ridge_detector/__init__.py"
 include = [
     "/ridge_detector",
 ]
+
+[dependency-groups]
+extra = [
+    "pandas>=2.0.3",
+]

@@ -3,7 +3,7 @@ import math
 import random
 from collections.abc import Sequence
 from enum import Enum
-from typing import NamedTuple, Optional
+from typing import Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -57,18 +57,48 @@ class LineData:
         )
 
 
-class PointData(NamedTuple):
+class LineView:
     """Data structure to hold point information."""
 
-    x: float
-    y: float
-    angle: float
-    response: float
-    width_l: float
-    width_r: float
-    asymmetry: float
-    intensity: float
-    contour_class: Optional["LinesUtil.ContourClass"] = None
+    def __init__(self, line: "Line", index: int | slice):
+        self.line = line
+        self.index = index
+
+    @property
+    def x(self):
+        return self.line.col[self.index]
+
+    @property
+    def y(self):
+        return self.line.row[self.index]
+
+    @property
+    def angle(self):
+        return self.line.angle[self.index]
+
+    @property
+    def response(self):
+        return self.line.response[self.index]
+
+    @property
+    def width_l(self):
+        return self.line.width_l[self.index]
+
+    @property
+    def width_r(self):
+        return self.line.width_r[self.index]
+
+    @property
+    def asymmetry(self):
+        return self.line.asymmetry[self.index]
+
+    @property
+    def intensity(self):
+        return self.line.intensity[self.index]
+
+    @property
+    def contour_class(self):
+        return self.line.contour_class
 
 
 class Line:
@@ -85,8 +115,8 @@ class Line:
 
     def __init__(
         self,
-        row: ArrayLikeFloat,
-        col: ArrayLikeFloat,
+        row: ArrayLikeFloat | ArrayLikeInt,
+        col: ArrayLikeFloat | ArrayLikeInt,
         angle: ArrayLikeFloat,
         response: ArrayLikeFloat,
         width_l: Optional[ArrayLikeFloat] = None,
@@ -113,18 +143,11 @@ class Line:
         return len(self.row)
 
     def __iter__(self):
-        for i in range(len(self)):
-            yield PointData(
-                x=self.col[i],
-                y=self.row[i],
-                angle=self.angle[i],
-                response=self.response[i],
-                width_l=self.width_l[i] if self.width_l is not None else 0.0,
-                width_r=self.width_r[i] if self.width_r is not None else 0.0,
-                asymmetry=self.asymmetry[i] if self.asymmetry is not None else 0.0,
-                intensity=self.intensity[i] if self.intensity is not None else 0.0,
-                contour_class=self.contour_class,
-            )
+        return (LineView(self, i) for i in range(len(self)))
+
+    def __getitem__(self, index: int | slice):
+        """Get a point by index."""
+        return LineView(self, index)
 
     @property
     def num(self):

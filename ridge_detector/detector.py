@@ -221,7 +221,10 @@ class RidgeData:
         height, width = self.shape
         for contour in self.contours:
             contour_points = [
-                [LinesUtil.BC(round(pt.x), width), LinesUtil.BR(round(pt.y), height)]
+                [
+                    LinesUtil.BC(np.round(pt.x), width),
+                    LinesUtil.BR(np.round(pt.y), height),
+                ]
                 for pt in contour
             ]
             all_contour_points.append(np.array(contour_points))
@@ -239,58 +242,50 @@ class RidgeData:
         """
         if self._width_points is not None:
             return self._width_points
-        all_left_widths = []
-        all_right_widths = []
+        all_left_edges = []
+        all_right_edges = []
         for contour in self.contours:
-            last_width_left = 0
-            last_width_right = 0
-            left_width = []
-            right_width = []
+            left_edge = []
+            right_edge = []
 
-            for pt in contour:
+            for last_pt, pt in itertools.pairwise(contour):
                 nx = np.cos(pt.angle)
                 ny = np.sin(pt.angle)
-                if last_width_left > 0 and pt.width_l > 0:
-                    px_l = round(pt.x - pt.width_l * nx)
-                    py_l = round(pt.y - pt.width_l * ny)
-                    left_width.append([px_l, py_l])
-                if last_width_right > 0 and pt.width_r > 0:
-                    px_r = round(pt.x + pt.width_r * nx)
-                    py_r = round(pt.y + pt.width_r * ny)
-                    right_width.append([px_r, py_r])
-                last_width_left = pt.width_l
-                last_width_right = pt.width_r
-            all_left_widths.append(np.array(left_width))
-            all_right_widths.append(np.array(right_width))
+                if last_pt.width_l > 0 and pt.width_l > 0:
+                    px_l = np.round(pt.x - pt.width_l * nx)
+                    py_l = np.round(pt.y - pt.width_l * ny)
+                    left_edge.append([px_l, py_l])
+                if last_pt.width_r > 0 and pt.width_r > 0:
+                    px_r = np.round(pt.x + pt.width_r * nx)
+                    py_r = np.round(pt.y + pt.width_r * ny)
+                    right_edge.append([px_r, py_r])
+            all_left_edges.append(np.array(left_edge))
+            all_right_edges.append(np.array(right_edge))
 
-        self._width_points = (all_left_widths, all_right_widths)
+        self._width_points = (all_left_edges, all_right_edges)
         return self._width_points
 
-    def plot_image_contours(
+    def get_image_contours(
         self,
         show_width=False,
-        ax=None,
         contour_color=(255, 0, 0),
         width_color=(0, 255, 0),
-        **kwargs,
     ):
-        contour_points = self.contour_points
-        result_img = (
+        """Plot ridge contours on the image with or without the widths."""
+        copied_image = (
             self.image.copy()
             if self.image.ndim > 2
             else np.repeat(self.image[:, :, None], 3, axis=2)
         )
-        img_contours = cv2.polylines(result_img, contour_points, False, contour_color)
+        image = cv2.polylines(copied_image, self.contour_points, False, contour_color)
         if show_width:
             width_left, width_right = self.width_points
-            img_contours = cv2.polylines(img_contours, width_right, False, width_color)
-            img_contours = cv2.polylines(img_contours, width_left, False, width_color)
-        if ax is None:
-            _, ax = plt.subplots()
-        ax.imshow(img_contours, **kwargs)
-        return ax
+            image = cv2.polylines(image, width_right, False, width_color)
+            image = cv2.polylines(image, width_left, False, width_color)
+        return image
 
-    def plot_binary_contours(self, ax=None, cmap="gray", **kwargs):
+    def get_binary_contours(self):
+        """Get a binary image with contours drawn in black."""
         height, width = self.shape
         binary_image = np.ones((height, width), dtype=np.uint8) * 255
 
@@ -298,12 +293,10 @@ class RidgeData:
             y = np.minimum(contour_points[:, 1], height - 1)
             x = np.minimum(contour_points[:, 0], width - 1)
             binary_image[y, x] = 0
-        if ax is None:
-            _, ax = plt.subplots()
-        ax.imshow(binary_image, cmap=cmap, **kwargs)
-        return ax
+        return binary_image
 
-    def plot_binary_widths(self, ax=None, cmap="gray", **kwargs):
+    def get_binary_widths(self):
+        """Get a binary image with ridge widths drawn in black."""
         binary_image = np.ones(self.shape, dtype=np.uint8) * 255
         for width_left, width_right in zip(*self.width_points):
             if width_left.size == 0 or width_right.size == 0:
@@ -311,10 +304,7 @@ class RidgeData:
             poly_points = np.concatenate((width_left, width_right[::-1, :]), axis=0)
             mask = ski.draw.polygon2mask(self.shape, poly_points[:, [1, 0]])
             binary_image[mask] = 0
-        if ax is None:
-            _, ax = plt.subplots()
-        ax.imshow(binary_image, cmap=cmap, **kwargs)
-        return ax
+        return binary_image
 
 
 class RidgeDetector:
@@ -1259,19 +1249,19 @@ class RidgeDetector:
             raise ValueError("Ridge data is not initialized.")
         if self.estimate_width:
             fig, axes = plt.subplots(2, 2, figsize=(figsize, figsize))
-            self.data.plot_image_contours(show_width=False, ax=axes[0, 0])
+            axes[0, 0].imshow(self.data.get_image_contours(show_width=False))
             axes[0, 0].set_title("contours")
-            self.data.plot_image_contours(show_width=True, ax=axes[0, 1])
+            axes[0, 1].imshow(self.data.get_image_contours(show_width=True))
             axes[0, 1].set_title("contours and widths")
-            self.data.plot_binary_contours(ax=axes[1, 0])
+            axes[1, 0].imshow(self.data.get_binary_contours())
             axes[1, 0].set_title("binary contours")
-            self.data.plot_binary_widths(ax=axes[1, 1])
+            axes[1, 1].imshow(self.data.get_binary_widths())
             axes[1, 1].set_title("binary widths")
         else:
             fig, axes = plt.subplots(1, 2, figsize=(figsize, figsize / 2))
-            self.data.plot_image_contours(show_width=False, ax=axes[0])
+            axes[0].imshow(self.data.get_image_contours(show_width=False))
             axes[0].set_title("contours")
-            self.data.plot_binary_contours(ax=axes[1])
+            axes[1].imshow(self.data.get_binary_contours())
             axes[1].set_title("binary contours")
         if show:
             plt.show()

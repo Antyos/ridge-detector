@@ -1,5 +1,5 @@
-import itertools
 from dataclasses import dataclass, field
+from itertools import chain, pairwise, product, repeat
 from pathlib import Path
 from typing import Optional, cast
 
@@ -162,7 +162,7 @@ class RidgeData:
             left_edge = []
             right_edge = []
 
-            for last_pt, pt in itertools.pairwise(contour):
+            for last_pt, pt in pairwise(contour):
                 nx = np.cos(pt.angle)
                 ny = np.sin(pt.angle)
                 if last_pt.width_l > 0 and pt.width_l > 0:
@@ -290,22 +290,18 @@ class RidgeData:
         for contour in self.contours:
             contour_dicts.append(
                 {
-                    "contour_id": itertools.repeat(contour.id, contour.num),
+                    "contour_id": repeat(contour.id, contour.num),
                     "position": list(range(contour.num)),
                     "x": contour.col,
                     "y": contour.row,
-                    "length": itertools.repeat(contour.estimate_length(), contour.num),
+                    "length": repeat(contour.estimate_length(), contour.num),
                     "line_width": contour.estimate_width(),
                     "angle_of_normal": contour.angle,
-                    "class": itertools.repeat(
-                        contour.get_contour_class_str(), contour.num
-                    ),
+                    "class": repeat(contour.get_contour_class_str(), contour.num),
                 }
             )
         contour_data = {
-            key: list(
-                itertools.chain.from_iterable(contour[key] for contour in contour_dicts)
-            )
+            key: list(chain.from_iterable(contour[key] for contour in contour_dicts))
             for key in contour_dicts[0].keys()
         }
         return pd.DataFrame(contour_data)
@@ -741,7 +737,7 @@ class RidgeDetector:
         indx = np.zeros((height, width), dtype=int)
 
         cross: list[Crossref] = []
-        for r_idx, c_idx in itertools.product(range(height), range(width)):
+        for r_idx, c_idx in product(range(height), range(width)):
             if line_points.ismax[r_idx, c_idx] >= 2:
                 cross.append(
                     Crossref(r_idx, c_idx, ridge_data.eigval[r_idx, c_idx], False)
@@ -1075,7 +1071,7 @@ class RidgeDetector:
                 ridge_data.contours.append(line_data.to_line(contour_class=cls))
             else:
                 # Delete the point from the label image; using maxx and maxy as coordinates in the label image
-                for i, j in itertools.product(range(-1, 2), repeat=2):
+                for i, j in product(range(-1, 2), repeat=2):
                     if (
                         label[
                             LinesUtil.BR(maxy + i, height),

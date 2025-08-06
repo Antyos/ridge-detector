@@ -1,4 +1,3 @@
-from dataclasses import dataclass, field
 from itertools import chain, pairwise, product, repeat
 from pathlib import Path
 from typing import Optional, cast
@@ -36,24 +35,115 @@ from ridge_detector.utils import (
 )
 
 
-@dataclass
 class FilteredData:
+    _shape: tuple[int, ...]
     derivatives: NDArray[np.floating]
     lower_thresh: NDArray[np.floating]
     upper_thresh: NDArray[np.floating]
     eigvals: NDArray[np.floating]
     eigvecs: NDArray[np.floating]
     sigma_map: NDArray[np.floating]
-    gradx: NDArray[np.floating] = field(init=False)
-    grady: NDArray[np.floating] = field(init=False)
+    gradx: NDArray[np.floating]
+    grady: NDArray[np.floating]
 
-    def __post_init__(self):
+    def __init__(
+        self,
+        grayscale: NDArray[np.uint8],
+        sigmas: NDArray[np.integer],
+        clow: float,
+        chigh: float,
+    ):
+        """Apply filtering to grayscale image."""
+        self._shape = grayscale.shape
+        height, width = self._shape
+        num_scales = len(sigmas)
+        saliency = np.zeros((height, width, num_scales), dtype=float)
+        orientation = np.zeros((height, width, 2, num_scales), dtype=float)
+        rys = np.zeros((height, width, num_scales), dtype=float)
+        rxs = np.zeros((height, width, num_scales), dtype=float)
+        ryys = np.zeros((height, width, num_scales), dtype=float)
+        rxys = np.zeros((height, width, num_scales), dtype=float)
+        rxxs = np.zeros((height, width, num_scales), dtype=float)
+        symmetric_image = np.zeros((height, width, 2, 2), dtype=float)
+
+        low_threshs = np.zeros((height, width, num_scales), dtype=float)
+        high_threshs = np.zeros((height, width, num_scales), dtype=float)
+        sigma_maps = np.zeros((height, width, num_scales), dtype=float)
+
+        # Filtering at different scales
+        gray = grayscale.astype(float)
+        for scale_idx, sigma in enumerate(sigmas):
+            ry = convolve_gauss(gray, sigma, LinesUtil.DERIV.R)
+            rx = convolve_gauss(gray, sigma, LinesUtil.DERIV.C)
+            ryy = convolve_gauss(gray, sigma, LinesUtil.DERIV.RR)
+            rxy = convolve_gauss(gray, sigma, LinesUtil.DERIV.RC)
+            rxx = convolve_gauss(gray, sigma, LinesUtil.DERIV.CC)
+
+            symmetric_image[..., 0, 0] = ryy
+            symmetric_image[..., 0, 1] = rxy
+            symmetric_image[..., 1, 0] = rxy
+            symmetric_image[..., 1, 1] = rxx
+            eigvals, eigvecs = np.linalg.eigh(symmetric_image)
+
+            # Maximum absolute eigen as the saliency of lines
+            idx = np.absolute(eigvals).argsort()[..., ::-1]
+            eigvals_tmp = np.take_along_axis(eigvals, idx, axis=-1)
+            eigvecs_tmp = np.take_along_axis(eigvecs, idx[:, :, None, :], axis=-1)
+
+            saliency[:, :, scale_idx] = sigma**2.0 * eigvals_tmp[:, :, 0]
+            orientation[:, :, :, scale_idx] = eigvecs_tmp[:, :, :, 0]
+
+            # Store intermediate results
+            rys[..., scale_idx] = ry
+            rxs[..., scale_idx] = rx
+            ryys[..., scale_idx] = ryy
+            rxys[..., scale_idx] = rxy
+            rxxs[..., scale_idx] = rxx
+
+            # Calculate thresholds for each scale using gamma-normalized measurement (gamma is to 2.0)
+            line_width = 2 * np.sqrt(3) * (sigma - 0.5)
+            _factor = (
+                line_width
+                / (np.sqrt(2 * np.pi) * sigma**3)
+                * np.exp(-(line_width**2) / (8 * sigma**2))
+            )
+            low_thresh = 0.17 * sigma**2.0 * np.floor(clow * _factor)
+            high_thresh = 0.17 * sigma**2.0 * np.floor(chigh * _factor)
+            low_threshs[..., scale_idx] = low_thresh
+            high_threshs[..., scale_idx] = high_thresh
+            sigma_maps[..., scale_idx] = sigma
+
+        # Get the scale index of the maximum saliency and the corresponding derivatives and thresholds
+        global_max_idx = saliency.argsort()[..., -1]
+
+        def take_and_squeeze(arr):
+            return np.squeeze(
+                np.take_along_axis(arr, global_max_idx[:, :, None], axis=-1)
+            )
+
+        self.derivatives = np.array(
+            [
+                take_and_squeeze(rys),
+                take_and_squeeze(rxs),
+                take_and_squeeze(ryys),
+                take_and_squeeze(rxys),
+                take_and_squeeze(rxxs),
+            ]
+        )
         self.gradx = self.derivatives[1, ...]
         self.grady = self.derivatives[0, ...]
 
+        self.lower_thresh = take_and_squeeze(low_threshs)
+        self.upper_thresh = take_and_squeeze(high_threshs)
+        self.sigma_map = take_and_squeeze(sigma_maps)
+        self.eigvals = np.take_along_axis(saliency, global_max_idx[:, :, None], axis=-1)
+        self.eigvecs = np.take_along_axis(
+            orientation, global_max_idx[:, :, None, None], axis=-1
+        )
+
     @property
     def shape(self):
-        return self.derivatives.shape[-2:]
+        return self._shape
 
 
 class LinePoints:
@@ -479,7 +569,9 @@ class RidgeDetector:
             image = iio.imread(image)
         data = RidgeData(image=image)
 
-        filtered_data = self.apply_filtering(data.gray)
+        filtered_data = FilteredData(
+            grayscale=data.gray, sigmas=self.sigmas, clow=self.clow, chigh=self.chigh
+        )
         line_points = LinePoints(filtered_data, dark_mode=self.mode)
         contours, junctions = self.compute_contours(filtered_data, line_points)
         data.contours = contours
@@ -489,109 +581,6 @@ class RidgeDetector:
         data = self.prune_contours(data)
         self.data = data
         return self.data
-
-    def apply_filtering(self, grayscale: NDArray[np.uint8]) -> FilteredData:
-        """Apply filtering to grayscale image."""
-        height, width = grayscale.shape
-        num_scales = len(self.sigmas)
-        saliency = np.zeros((height, width, num_scales), dtype=float)
-        orientation = np.zeros((height, width, 2, num_scales), dtype=float)
-        rys = np.zeros((height, width, num_scales), dtype=float)
-        rxs = np.zeros((height, width, num_scales), dtype=float)
-        ryys = np.zeros((height, width, num_scales), dtype=float)
-        rxys = np.zeros((height, width, num_scales), dtype=float)
-        rxxs = np.zeros((height, width, num_scales), dtype=float)
-        symmetric_image = np.zeros((height, width, 2, 2), dtype=float)
-
-        low_threshs = np.zeros((height, width, num_scales), dtype=float)
-        high_threshs = np.zeros((height, width, num_scales), dtype=float)
-        sigma_maps = np.zeros((height, width, num_scales), dtype=float)
-
-        # Filtering at different scales
-        gray = grayscale.astype(float)
-        for scale_idx, sigma in enumerate(self.sigmas):
-            ry = convolve_gauss(gray, sigma, LinesUtil.DERIV.R)
-            rx = convolve_gauss(gray, sigma, LinesUtil.DERIV.C)
-            ryy = convolve_gauss(gray, sigma, LinesUtil.DERIV.RR)
-            rxy = convolve_gauss(gray, sigma, LinesUtil.DERIV.RC)
-            rxx = convolve_gauss(gray, sigma, LinesUtil.DERIV.CC)
-
-            symmetric_image[..., 0, 0] = ryy
-            symmetric_image[..., 0, 1] = rxy
-            symmetric_image[..., 1, 0] = rxy
-            symmetric_image[..., 1, 1] = rxx
-            eigvals, eigvecs = np.linalg.eigh(symmetric_image)
-
-            # Maximum absolute eigen as the saliency of lines
-            idx = np.absolute(eigvals).argsort()[..., ::-1]
-            eigvals_tmp = np.take_along_axis(eigvals, idx, axis=-1)
-            eigvecs_tmp = np.take_along_axis(eigvecs, idx[:, :, None, :], axis=-1)
-
-            saliency[:, :, scale_idx] = sigma**2.0 * eigvals_tmp[:, :, 0]
-            orientation[:, :, :, scale_idx] = eigvecs_tmp[:, :, :, 0]
-
-            # Store intermediate results
-            rys[..., scale_idx] = ry
-            rxs[..., scale_idx] = rx
-            ryys[..., scale_idx] = ryy
-            rxys[..., scale_idx] = rxy
-            rxxs[..., scale_idx] = rxx
-
-            # Calculate thresholds for each scale using gamma-normalized measurement (gamma is to 2.0)
-            line_width = 2 * np.sqrt(3) * (sigma - 0.5)
-            low_thresh = (
-                0.17
-                * sigma**2.0
-                * np.floor(
-                    self.clow
-                    * line_width
-                    / (np.sqrt(2 * np.pi) * sigma**3)
-                    * np.exp(-(line_width**2) / (8 * sigma**2))
-                )
-            )
-            high_thresh = (
-                0.17
-                * sigma**2.0
-                * np.floor(
-                    self.chigh
-                    * line_width
-                    / (np.sqrt(2 * np.pi) * sigma**3)
-                    * np.exp(-(line_width**2) / (8 * sigma**2))
-                )
-            )
-            low_threshs[..., scale_idx] = low_thresh
-            high_threshs[..., scale_idx] = high_thresh
-            sigma_maps[..., scale_idx] = sigma
-
-        # Get the scale index of the maximum saliency and the corresponding derivatives and thresholds
-        global_max_idx = saliency.argsort()[..., -1]
-        derivatives = np.squeeze(
-            np.array(
-                [
-                    np.take_along_axis(rys, global_max_idx[:, :, None], axis=-1),
-                    np.take_along_axis(rxs, global_max_idx[:, :, None], axis=-1),
-                    np.take_along_axis(ryys, global_max_idx[:, :, None], axis=-1),
-                    np.take_along_axis(rxys, global_max_idx[:, :, None], axis=-1),
-                    np.take_along_axis(rxxs, global_max_idx[:, :, None], axis=-1),
-                ]
-            )
-        )
-        return FilteredData(
-            lower_thresh=np.squeeze(
-                np.take_along_axis(low_threshs, global_max_idx[:, :, None], axis=-1)
-            ),
-            upper_thresh=np.squeeze(
-                np.take_along_axis(high_threshs, global_max_idx[:, :, None], axis=-1)
-            ),
-            sigma_map=np.squeeze(
-                np.take_along_axis(sigma_maps, global_max_idx[:, :, None], axis=-1)
-            ),
-            derivatives=derivatives,
-            eigvals=np.take_along_axis(saliency, global_max_idx[:, :, None], axis=-1),
-            eigvecs=np.take_along_axis(
-                orientation, global_max_idx[:, :, None, None], axis=-1
-            ),
-        )
 
     def extend_lines(
         self,

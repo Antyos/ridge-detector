@@ -420,12 +420,9 @@ class RidgeDetector:
         self.data = None
         self.mode = LinesUtil.MODE.dark if self.dark_line else LinesUtil.MODE.light
 
-    def apply_filtering(self, data: RidgeData) -> FilteredData:
-        """Apply filtering to base image data."""
-        if data is None:
-            raise ValueError("Ridge data is not initialized.")
-        width = data.width
-        height = data.height
+    def apply_filtering(self, grayscale: NDArray[np.uint8]) -> FilteredData:
+        """Apply filtering to grayscale image."""
+        height, width = grayscale.shape
         num_scales = len(self.sigmas)
         saliency = np.zeros((height, width, num_scales), dtype=float)
         orientation = np.zeros((height, width, 2, num_scales), dtype=float)
@@ -441,7 +438,7 @@ class RidgeDetector:
         sigma_maps = np.zeros((height, width, num_scales), dtype=float)
 
         # Filtering at different scales
-        gray = data.gray.astype(float)
+        gray = grayscale.astype(float)
         for scale_idx, sigma in enumerate(self.sigmas):
             ry = convolve_gauss(gray, sigma, LinesUtil.DERIV.R)
             rx = convolve_gauss(gray, sigma, LinesUtil.DERIV.C)
@@ -574,16 +571,17 @@ class RidgeDetector:
 
     def extend_lines(
         self,
-        ridge_data: RidgeData,
+        contours: list[Line],
+        junctions: list[Junction],
         label: NDArray[np.integer],
         filtered_data: FilteredData,
-    ):
+    ) -> tuple[list[Line], list[Junction]]:
         """Extend the lines in the ridge data based on the gradient direction."""
         height, width = label.shape[:2]
         s = self.mode.value
         length = 2.5 * filtered_data.sigma_map
         max_line = np.ceil(length * 1.2).astype(int)
-        for idx_cont, contour in enumerate(ridge_data.contours):
+        for idx_cont, contour in enumerate(contours):
             num_pnt = contour.num
             if len(contour) == 1 or contour.contour_class == Line.ContourClass.closed:
                 continue
@@ -682,7 +680,7 @@ class RidgeDetector:
                     # Have we hit another line?
                     if label[nexty, nextx] > 0:
                         other_contour_idx = label[nexty, nextx] - 1
-                        other_contour = ridge_data.contours[other_contour_idx]
+                        other_contour = contours[other_contour_idx]
                         # Search for the junction point on the other line.
                         dist = np.sqrt(
                             (nextpy - other_contour.row) ** 2
@@ -738,9 +736,9 @@ class RidgeDetector:
                         contour.angle[0] = end_angle
                         contour.response[0] = end_resp
                         # Adapt indices of the previously found junctions.
-                        for k in range(len(ridge_data.junctions)):
-                            if ridge_data.junctions[k].cont1 == idx_cont:
-                                ridge_data.junctions[k].pos += num_add
+                        for k in range(len(junctions)):
+                            if junctions[k].cont1 == idx_cont:
+                                junctions[k].pos += num_add
                     else:
                         # Insert points at the end of the line.
                         contour.row[: num_pnt - num_add] = trow
@@ -771,7 +769,7 @@ class RidgeDetector:
                             contour_idx = 0
                         else:
                             contour_idx = num_pnt - 1
-                        ridge_data.junctions.append(
+                        junctions.append(
                             Junction(
                                 int(other_contour_idx),
                                 int(idx_cont),
@@ -780,32 +778,28 @@ class RidgeDetector:
                                 contour.col[contour_idx],
                             )
                         )
-            return ridge_data.junctions
+            return contours, junctions
 
     def compute_contours(
         self,
-        ridge_data: RidgeData,
+        eigval: NDArray[np.floating],
         filtered_data: FilteredData,
         line_points: LinePoints,
-    ) -> None:
-        """Compute the contours from the line points.
-
-        Mutates `ridge_data`.
-        """
-        width = ridge_data.width
-        height = ridge_data.height
+    ) -> tuple[list[Line], list[Junction]]:
+        """Compute the contours from the line points."""
+        height, width = eigval.shape
         label = np.zeros((height, width), dtype=int)
         indx = np.zeros((height, width), dtype=int)
+        contours: list[Line] = []
+        junctions: list[Junction] = []
 
         crossrefs: list[Crossref] = []
         for r_idx, c_idx in product(range(height), range(width)):
             if line_points.ismax[r_idx, c_idx] >= 2:
-                crossrefs.append(
-                    Crossref(r_idx, c_idx, ridge_data.eigval[r_idx, c_idx], False)
-                )
+                crossrefs.append(Crossref(r_idx, c_idx, eigval[r_idx, c_idx], False))
         area = len(crossrefs)
 
-        response_2d = ridge_data.eigval.reshape(height, width)
+        response_2d = eigval.reshape(height, width)
         resp_dr = convolve(response_2d, kernel_r, mode="mirror")
         resp_dc = convolve(response_2d, kernel_c, mode="mirror")
         resp_dd = convolve(response_2d, kernel_d, mode="mirror")
@@ -838,7 +832,7 @@ class RidgeDetector:
             line_data = LineData()
 
             # Add starting point to the line.
-            label[maxy, maxx] = len(ridge_data.contours) + 1
+            label[maxy, maxx] = len(contours) + 1
             if indx[maxy, maxx] != 0:
                 crossrefs[indx[maxy, maxx] - 1].done = True
 
@@ -881,7 +875,7 @@ class RidgeDetector:
                     if diff >= np.pi / 2.0:
                         diff = np.pi - diff
                     if diff < MAX_ANGLE_DIFFERENCE:
-                        label[nexty, nextx] = len(ridge_data.contours) + 1
+                        label[nexty, nextx] = len(contours) + 1
                         if indx[nexty, nextx] != 0:
                             crossrefs[indx[nexty, nextx] - 1].done = True
 
@@ -959,7 +953,7 @@ class RidgeDetector:
                             if diff >= np.pi / 2.0:
                                 diff = np.pi - diff
                             if diff < MAX_ANGLE_DIFFERENCE:
-                                label[nexty, nextx] = len(ridge_data.contours) + 1
+                                label[nexty, nextx] = len(contours) + 1
                                 if not (indx[nexty, nextx] == 0):
                                     crossrefs[indx[nexty, nextx] - 1].done = True
 
@@ -1012,7 +1006,7 @@ class RidgeDetector:
                     # If the appropriate neighbor is already processed a junction point is found
                     if label[y, x] > 0:
                         k = label[y, x] - 1
-                        if k == len(ridge_data.contours):
+                        if k == len(contours):
                             # Line intersects itself
                             for j in range(len(line_data) - 1):
                                 if not (
@@ -1038,10 +1032,10 @@ class RidgeDetector:
                                         cls = Line.ContourClass.start_junc
                                         # Index num_pnt-1-j is correct since the line will be sorted in reverse
                                         pos = len(line_data) - 1 - j
-                                    ridge_data.junctions.append(
+                                    junctions.append(
                                         Junction(
-                                            len(ridge_data.contours),
-                                            len(ridge_data.contours),
+                                            len(contours),
+                                            len(contours),
                                             pos,
                                             float(line_points.posy[y, x]),
                                             float(line_points.posx[y, x]),
@@ -1051,7 +1045,7 @@ class RidgeDetector:
                             j = -1
                             contour = None
                         else:
-                            contour = ridge_data.contours[k]
+                            contour = contours[k]
                             # Find the index of the first point on the other line
                             mask = (contour.row == line_points.posy[y, x]) & (
                                 contour.col == line_points.posx[y, x]
@@ -1096,10 +1090,10 @@ class RidgeDetector:
                                 cls = Line.ContourClass.end_junc
 
                             # Add the new junction
-                            ridge_data.junctions.append(
+                            junctions.append(
                                 Junction(
                                     int(k),
-                                    len(ridge_data.contours),
+                                    len(contours),
                                     int(j),
                                     line_data.row[-1],
                                     line_data.col[-1],
@@ -1107,26 +1101,28 @@ class RidgeDetector:
                             )
                         break
 
-                    label[y, x] = len(ridge_data.contours) + 1
+                    label[y, x] = len(contours) + 1
                     if indx[y, x] != 0:
                         crossrefs[indx[y, x] - 1].done = True
 
             if len(line_data) > 1:
-                ridge_data.contours.append(line_data.to_line(contour_class=cls))
+                contours.append(line_data.to_line(contour_class=cls))
             else:
                 # Delete the point from the label image; using maxx and maxy as
                 # coordinates in the label image
                 i, j = np.meshgrid([-1, 0, 1], [-1, 0, 1])
                 rows = LinesUtil.BR(maxy + i, height)
                 cols = LinesUtil.BC(maxx + j, width)
-                mask = label[rows, cols] == len(ridge_data.contours) + 1
+                mask = label[rows, cols] == len(contours) + 1
                 label[rows[mask], cols[mask]] = 0
 
         if self.extend_line:
-            self.extend_lines(ridge_data, label, filtered_data)
+            contours, junctions = self.extend_lines(
+                contours, junctions, label, filtered_data
+            )
 
         # Adjust angles to point to the right of the line
-        for contour in ridge_data.contours:
+        for contour in contours:
             if len(contour) > 1:
                 # Check angle at the midpoint of the line
                 k = (len(contour) - 1) // 2
@@ -1138,6 +1134,7 @@ class RidgeDetector:
                 # If angles point to the left of the line, they have to be adapted
                 if ny * dx - nx * dy < 0:
                     contour.angle = (contour.angle + np.pi) % (2 * np.pi)
+        return contours, junctions
 
     def compute_line_width(self, ridge_data: RidgeData, filtered_data: FilteredData):
         """Compute the line width of the contours in the ridge data."""
@@ -1275,9 +1272,13 @@ class RidgeDetector:
             image = iio.imread(image)
         data = RidgeData(image=image)
 
-        filtered_data = self.apply_filtering(data)
+        filtered_data = self.apply_filtering(data.gray)
         line_points = self.compute_line_points(data, filtered_data)
-        self.compute_contours(data, filtered_data, line_points)
+        contours, junctions = self.compute_contours(
+            data.eigval, filtered_data, line_points
+        )
+        data.contours = contours
+        data.junctions = junctions
         if self.estimate_width:
             data = self.compute_line_width(data, filtered_data)
         data = self.prune_contours(data)

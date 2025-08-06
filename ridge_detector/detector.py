@@ -778,7 +778,7 @@ class RidgeDetector:
                                 contour.col[contour_idx],
                             )
                         )
-            return contours, junctions
+        return contours, junctions
 
     def compute_contours(
         self,

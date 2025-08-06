@@ -734,13 +734,13 @@ class RidgeDetector:
         label = np.zeros((height, width), dtype=int)
         indx = np.zeros((height, width), dtype=int)
 
-        cross: list[Crossref] = []
+        crossrefs: list[Crossref] = []
         for r_idx, c_idx in product(range(height), range(width)):
             if line_points.ismax[r_idx, c_idx] >= 2:
-                cross.append(
+                crossrefs.append(
                     Crossref(r_idx, c_idx, ridge_data.eigval[r_idx, c_idx], False)
                 )
-        area = len(cross)
+        area = len(crossrefs)
 
         response_2d = ridge_data.eigval.reshape(height, width)
         resp_dr = convolve(response_2d, kernel_r, mode="mirror")
@@ -751,23 +751,23 @@ class RidgeDetector:
         resp_dcc = convolve(response_2d, kernel_cc, mode="mirror")
 
         # Sorting cross list in ascending order by value
-        cross.sort()
+        crossrefs.sort()
 
         # Updating indx based on the sorted cross list
-        for ci, cref in enumerate(cross):
+        for ci, cref in enumerate(crossrefs):
             indx[cref.y, cref.x] = ci + 1
 
         indx_max = 0
         while True:
             cls = Line.ContourClass.no_junc
-            while indx_max < area and cross[indx_max].done:
+            while indx_max < area and crossrefs[indx_max].done:
                 indx_max += 1
 
             if indx_max == area:
                 break
 
-            max_val = cross[indx_max].value
-            maxy, maxx = cross[indx_max].y, cross[indx_max].x
+            max_val = crossrefs[indx_max].value
+            maxy, maxx = crossrefs[indx_max].y, crossrefs[indx_max].x
             if max_val == 0.0:
                 break
 
@@ -777,7 +777,7 @@ class RidgeDetector:
             # Add starting point to the line.
             label[maxy, maxx] = len(ridge_data.contours) + 1
             if indx[maxy, maxx] != 0:
-                cross[indx[maxy, maxx] - 1].done = True
+                crossrefs[indx[maxy, maxx] - 1].done = True
 
             # Select line direction
             alpha = line_points.get_alpha(x=maxx, y=maxy)
@@ -820,16 +820,14 @@ class RidgeDetector:
                     if diff < MAX_ANGLE_DIFFERENCE:
                         label[nexty, nextx] = len(ridge_data.contours) + 1
                         if indx[nexty, nextx] != 0:
-                            cross[indx[nexty, nextx] - 1].done = True
+                            crossrefs[indx[nexty, nextx] - 1].done = True
 
             for it in range(1, 3):
                 y, x = maxy, maxx
                 alpha = line_points.get_alpha(x=x, y=y)
-                last_octant = (
-                    int(np.floor(4.0 / np.pi * alpha + 0.5)) % 4
-                    if it == 1
-                    else int(np.floor(4.0 / np.pi * alpha + 0.5)) % 4 + 4
-                )
+                last_octant = int(np.floor(4.0 / np.pi * alpha + 0.5)) % 4
+                if it != 1:
+                    last_octant += 4
                 last_beta = alpha + np.pi / 2.0
                 if last_beta >= 2.0 * np.pi:
                     last_beta -= 2.0 * np.pi
@@ -900,7 +898,7 @@ class RidgeDetector:
                             if diff < MAX_ANGLE_DIFFERENCE:
                                 label[nexty, nextx] = len(ridge_data.contours) + 1
                                 if not (indx[nexty, nextx] == 0):
-                                    cross[indx[nexty, nextx] - 1].done = True
+                                    crossrefs[indx[nexty, nextx] - 1].done = True
 
                     # Have we found the end of the line?
                     if not nextismax:
@@ -1052,7 +1050,7 @@ class RidgeDetector:
 
                     label[y, x] = len(ridge_data.contours) + 1
                     if indx[y, x] != 0:
-                        cross[indx[y, x] - 1].done = True
+                        crossrefs[indx[y, x] - 1].done = True
 
             if len(line_data) > 1:
                 ridge_data.contours.append(line_data.to_line(contour_class=cls))
@@ -1077,6 +1075,7 @@ class RidgeDetector:
         # Adjust angles to point to the right of the line
         for contour in ridge_data.contours:
             if len(contour) > 1:
+                # Check angle at the midpoint of the line
                 k = (len(contour) - 1) // 2
                 dy = contour.row[k + 1] - contour.row[k]
                 dx = contour.col[k + 1] - contour.col[k]
@@ -1085,9 +1084,7 @@ class RidgeDetector:
 
                 # If angles point to the left of the line, they have to be adapted
                 if ny * dx - nx * dy < 0:
-                    contour.angle = np.array(
-                        [(ang + np.pi) % (2 * np.pi) for ang in contour.angle]
-                    )
+                    contour.angle = (contour.angle + np.pi) % (2 * np.pi)
 
     def compute_line_width(self, ridge_data: RidgeData, filtered_data: FilteredData):
         height = ridge_data.height

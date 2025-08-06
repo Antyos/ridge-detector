@@ -51,6 +51,10 @@ class FilteredData:
         self.gradx = self.derivatives[1, ...]
         self.grady = self.derivatives[0, ...]
 
+    @property
+    def shape(self):
+        return self.derivatives.shape[-2:]
+
 
 class LinePoints:
     eigval: NDArray[np.floating]
@@ -61,18 +65,47 @@ class LinePoints:
     posy: NDArray[np.floating]
     ismax: NDArray[np.integer]
 
-    def __init__(self, shape: tuple[int, ...]):
-        self._shape = shape
-        self.eigval = np.zeros(shape, dtype=float)
-        self.ismax = np.zeros(shape, dtype=int)
-        self.normx = np.zeros(shape, dtype=float)
-        self.normy = np.zeros(shape, dtype=float)
-        self.posx = np.zeros(shape, dtype=float)
-        self.posy = np.zeros(shape, dtype=float)
+    def __init__(self, filtered_data: FilteredData, dark_mode: LinesUtil.MODE):
+        # Equivalent to ImageJ RidgeDetection: Position.compute_line_points()
+        ry = filtered_data.grady
+        rx = filtered_data.gradx
+        ryy = filtered_data.derivatives[2, ...]
+        rxy = filtered_data.derivatives[3, ...]
+        rxx = filtered_data.derivatives[4, ...]
 
-    @property
-    def shape(self) -> tuple[int, ...]:
-        return self._shape
+        val = filtered_data.eigvals[:, :, 0] * dark_mode.value
+        val_mask = val > 0.0
+        self.eigval = np.where(val_mask, val, 0.0).astype(float)
+
+        # Equations (22) and (23) in
+        # Steger, C. (1998). An unbiased detector of curvilinear structures. (DOI: 10.1109/34.659930)
+        nx = filtered_data.eigvecs[..., 1, 0]
+        ny = filtered_data.eigvecs[..., 0, 0]
+        numerator = (ry * ny) + (rx * nx)
+        denominator = (ryy * ny**2) + (2.0 * rxy * nx * ny) + (rxx * nx**2)
+
+        # The minus sign in Eq. (23) is ignored to follow the logic of detecting black ridges in white background
+        t = numerator / (denominator + np.finfo(float).eps)
+        py = t * ny
+        px = t * nx
+
+        boundary_mask = (abs(py) <= PIXEL_BOUNDARY) & (abs(px) <= PIXEL_BOUNDARY)
+        base_mask = val_mask & boundary_mask
+        upper_mask = base_mask & (val >= filtered_data.upper_thresh)
+        lower_mask = (
+            base_mask
+            & (val >= filtered_data.lower_thresh)
+            & (val < filtered_data.upper_thresh)
+        )
+        self.ismax = np.zeros(filtered_data.shape, dtype=int)
+        self.ismax[upper_mask] = 2
+        self.ismax[lower_mask] = 1
+
+        self.normy = np.where(base_mask, ny, 0.0)
+        self.normx = np.where(base_mask, nx, 0.0)
+        Y, X = np.mgrid[: filtered_data.shape[0], : filtered_data.shape[1]]
+        self.posy = np.where(base_mask, Y + py, 0.0)
+        self.posx = np.where(base_mask, X + px, 0.0)
 
     def get_alpha(self, x, y):
         """Calculate the angle of the normal vector at the given point.
@@ -525,52 +558,6 @@ class RidgeDetector:
                 orientation, global_max_idx[:, :, None, None], axis=-1
             ),
         )
-
-    def compute_line_points(
-        self, shape: tuple[int, ...], filtered_data: FilteredData
-    ) -> LinePoints:
-        """Compute the line points from the filtered data."""
-        ry = filtered_data.grady
-        rx = filtered_data.gradx
-        ryy = filtered_data.derivatives[2, ...]
-        rxy = filtered_data.derivatives[3, ...]
-        rxx = filtered_data.derivatives[4, ...]
-
-        line_data = LinePoints(shape)
-        val = filtered_data.eigvals[:, :, 0] * self.mode.value
-        val_mask = val > 0.0
-        line_data.eigval[val_mask] = val[val_mask]
-
-        # Equations (22) and (23) in
-        # Steger, C. (1998). An unbiased detector of curvilinear structures. (DOI: 10.1109/34.659930)
-        nx = filtered_data.eigvecs[..., 1, 0]
-        ny = filtered_data.eigvecs[..., 0, 0]
-        numerator = (ry * ny) + (rx * nx)
-        denominator = (ryy * ny**2) + (2.0 * rxy * nx * ny) + (rxx * nx**2)
-
-        # The minus sign in Eq. (23) is ignored to follow the logic of detecting black ridges in white background
-        t = numerator / (denominator + np.finfo(float).eps)
-        py = t * ny
-        px = t * nx
-
-        bnd_mask = (abs(py) <= PIXEL_BOUNDARY) & (abs(px) <= PIXEL_BOUNDARY)
-        base_mask = val_mask & bnd_mask
-        upper_mask = base_mask & (val >= filtered_data.upper_thresh)
-        lower_mask = (
-            base_mask
-            & (val >= filtered_data.lower_thresh)
-            & (val < filtered_data.upper_thresh)
-        )
-
-        line_data.ismax[upper_mask] = 2
-        line_data.ismax[lower_mask] = 1
-
-        line_data.normy[base_mask] = ny[base_mask]
-        line_data.normx[base_mask] = nx[base_mask]
-        Y, X = np.mgrid[: line_data.shape[0], : line_data.shape[1]]
-        line_data.posy[base_mask] = Y[base_mask] + py[base_mask]
-        line_data.posx[base_mask] = X[base_mask] + px[base_mask]
-        return line_data
 
     def extend_lines(
         self,
@@ -1277,7 +1264,7 @@ class RidgeDetector:
         data = RidgeData(image=image)
 
         filtered_data = self.apply_filtering(data.gray)
-        line_points = self.compute_line_points(data.shape, filtered_data)
+        line_points = LinePoints(filtered_data, dark_mode=self.mode)
         contours, junctions = self.compute_contours(filtered_data, line_points)
         data.contours = contours
         data.junctions = junctions

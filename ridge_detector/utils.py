@@ -363,23 +363,33 @@ class LinesUtil:
 
     @staticmethod
     def BR(row, height):
-        return (
-            np.abs(row)
-            if row < 0
-            else (height - row + height - 2)
-            if row >= height
-            else row
-        )
+        row = np.asarray(row)
+        # For scalar input, preserve output type
+        if row.ndim == 0:
+            if row < 0:
+                return abs(row)
+            elif row >= height:
+                return height - row + height - 2
+            else:
+                return row
+        # For array input, vectorized logic
+        out = np.where(row < 0, np.abs(row), row)
+        out = np.where(row >= height, height - row + height - 2, out)
+        return out
 
     @staticmethod
     def BC(col, width):
-        return (
-            np.abs(col)
-            if col < 0
-            else (width - col + width - 2)
-            if col >= width
-            else col
-        )
+        col = np.asarray(col)
+        if col.ndim == 0:
+            if col < 0:
+                return abs(col)
+            elif col >= width:
+                return width - col + width - 2
+            else:
+                return col
+        out = np.where(col < 0, np.abs(col), col)
+        out = np.where(col >= width, width - col + width - 2, out)
+        return out
 
 
 class Junction:

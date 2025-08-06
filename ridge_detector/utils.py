@@ -221,15 +221,15 @@ class Line:
         cls.id_counter = 0
 
     class ContourClass(Enum):
-        cont_no_junc = (1,)
+        no_junc = (1,)
         """Neither end point is a junction."""
-        cont_start_junc = (2,)
+        start_junc = (2,)
         """Only the start point of the line is a junction."""
-        cont_end_junc = (3,)
+        end_junc = (3,)
         """Only the end point of the line is a junction."""
-        cont_both_junc = (4,)
+        both_junc = (4,)
         """Both end points of the line are junctions."""
-        cont_closed = 5
+        closed = 5
         """Contour is closed, i.e., the start and end points are the same."""
 
 
@@ -780,17 +780,17 @@ def fix_locations(
         correct_start = (
             cont.contour_class
             in [
-                Line.ContourClass.cont_no_junc,
-                Line.ContourClass.cont_end_junc,
-                Line.ContourClass.cont_closed,
+                Line.ContourClass.no_junc,
+                Line.ContourClass.end_junc,
+                Line.ContourClass.closed,
             ]
         ) and (width_r[0] > 0 and width_l[0] > 0)
         correct_end = (
             cont.contour_class
             in [
-                Line.ContourClass.cont_no_junc,
-                Line.ContourClass.cont_start_junc,
-                Line.ContourClass.cont_closed,
+                Line.ContourClass.no_junc,
+                Line.ContourClass.start_junc,
+                Line.ContourClass.closed,
             ]
         ) and (width_r[-1] > 0 and width_l[-1] > 0)
 

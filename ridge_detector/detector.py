@@ -365,6 +365,10 @@ class RidgeDetector:
         extend_line: bool = False,
         correct_pos: bool = False,
     ):
+        if min_len < 0:
+            raise ValueError("min_len must be non-negative")
+        if max_len < 0:
+            raise ValueError("max_len must be non-negative")
         self.low_contrast = low_contrast
         self.high_contrast = high_contrast
         self.min_len = min_len

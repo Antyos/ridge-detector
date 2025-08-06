@@ -73,6 +73,14 @@ class LineView:
         return self.line.row[self.index]
 
     @property
+    def col(self):
+        return self.line.col[self.index]
+
+    @property
+    def row(self):
+        return self.line.row[self.index]
+
+    @property
     def angle(self):
         return self.line.angle[self.index]
 
@@ -158,6 +166,14 @@ class Line:
         if self.contour_class:
             return self.contour_class.name
         return "none"
+
+    @property
+    def x(self):
+        return self.col
+
+    @property
+    def y(self):
+        return self.row
 
     def get_x_coordinates(self):
         return self.col

@@ -229,7 +229,7 @@ class RidgeData:
             binary_image[mask] = 0
         return binary_image
 
-    def plot(self, figsize: float = 16, show_width: bool = True, show: bool = True):
+    def plot(self, figsize: float = 10, show_width: bool = True, show: bool = True):
         """Plot the contours using matplotlib."""
         try:
             import matplotlib.pyplot as plt
@@ -1256,7 +1256,7 @@ class RidgeDetector:
             draw_width=draw_width and self.estimate_width,
         )
 
-    def show_results(self, figsize=16, show=True):
+    def show_results(self, figsize=10, show=True):
         if self.data is None:
             raise ValueError("Ridge data is not initialized.")
         self.data.plot(figsize=figsize, show_width=self.estimate_width, show=show)

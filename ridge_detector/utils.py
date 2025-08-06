@@ -620,8 +620,10 @@ def interpolate_gradient_test(grady, gradx, py, px):
     return gy, gx
 
 
-def fill_gaps(master, slave1, slave2, cont):
-    num_points = cont.num
+def fill_gaps(
+    master: NDArray, slave1: Optional[NDArray], slave2: Optional[NDArray], cont: Line
+) -> NDArray:
+    num_points = len(cont)
     i = 0
     while i < num_points:
         if master[i] == 0:

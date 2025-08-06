@@ -1143,30 +1143,32 @@ class RidgeDetector:
                 ny, nx = np.sin(contour.angle[j]), np.cos(contour.angle[j])
 
                 line = bresenham(ny, nx, max_length[r, c])
-                num_line = line.shape[0]
-                width_r[j] = width_l[j] = 0
 
-                for direct in [-1, 1]:
-                    for k in range(num_line):
-                        y, x = (
-                            LinesUtil.BR(r + direct * line[k, 0], height),
-                            LinesUtil.BC(c + direct * line[k, 1], width),
-                        )
-                        val = -eigvals[y, x, 0]
-                        if val > 0.0:
-                            p1, p2 = pp1[y, x], pp2[y, x]
-
-                            if abs(p1) <= 0.5 and abs(p2) <= 0.5:
-                                t = ny * (py - (r + direct * line[k, 0] + p1)) + nx * (
-                                    px - (c + direct * line[k, 1] + p2)
-                                )
-                                if direct == 1:
-                                    grad_r[j] = grad_rl[y, x]
-                                    width_r[j] = abs(t)
-                                else:
-                                    grad_l[j] = grad_rl[y, x]
-                                    width_l[j] = abs(t)
-                                break
+                for direction in [-1, 1]:
+                    _row = r + direction * line[:, 0]
+                    _col = c + direction * line[:, 1]
+                    y = LinesUtil.BR(_row, height)
+                    x = LinesUtil.BC(_col, width)
+                    mask = (
+                        (-eigvals[y, x, 0] > 0.0)
+                        & (np.abs(pp1[y, x]) <= 0.5)
+                        & (np.abs(pp2[y, x]) <= 0.5)
+                    )
+                    indices = np.where(mask)[0]
+                    if len(indices) == 0:
+                        # Values are already initialized to zero, so we can continue
+                        continue
+                    idx = indices[0]
+                    t = abs(
+                        ny * (py - (_row[idx] + pp1[y[idx], x[idx]]))
+                        + nx * (px - (_col[idx] + pp2[y[idx], x[idx]]))
+                    )
+                    if direction == 1:
+                        grad_r[j] = grad_rl[y[idx], x[idx]]
+                        width_r[j] = t
+                    else:
+                        grad_l[j] = grad_rl[y[idx], x[idx]]
+                        width_l[j] = t
             contour.fix_locations(
                 width_l,
                 width_r,

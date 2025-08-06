@@ -315,7 +315,7 @@ class RidgeData:
             - length (float) : Length of the segment
             - line_width (float) : Width of the segment
             - angle_of_normal (float) : Angle of the normal vector to the segment
-            - class (str) : Contour class name
+            - class (category) : Contour class name
         """
         try:
             import pandas as pd

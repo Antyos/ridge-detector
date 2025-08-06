@@ -456,6 +456,40 @@ class RidgeDetector:
         self.data = None
         self.mode = LinesUtil.MODE.dark if self.dark_line else LinesUtil.MODE.light
 
+    def detect_lines(self, image: str | Path | NDArray) -> RidgeData:
+        """Main method to detect lines in an image.
+
+        Only 8-bit grayscale images are supported. Other image types will be converted
+        automaically.
+
+        If passing an array, assumes the image is in (height, width) or (height, width,
+        channels).
+
+        Parameters
+        ----------
+        image : str | Path | NDArray
+            The input image to process.
+
+        Returns
+        -------
+        RidgeData
+            The processed ridge data containing detected lines and their properties.
+        """
+        if isinstance(image, (str, Path)):
+            image = iio.imread(image)
+        data = RidgeData(image=image)
+
+        filtered_data = self.apply_filtering(data.gray)
+        line_points = LinePoints(filtered_data, dark_mode=self.mode)
+        contours, junctions = self.compute_contours(filtered_data, line_points)
+        data.contours = contours
+        data.junctions = junctions
+        if self.estimate_width:
+            data = self.compute_line_width(data, filtered_data)
+        data = self.prune_contours(data)
+        self.data = data
+        return self.data
+
     def apply_filtering(self, grayscale: NDArray[np.uint8]) -> FilteredData:
         """Apply filtering to grayscale image."""
         height, width = grayscale.shape
@@ -1239,40 +1273,6 @@ class RidgeDetector:
         ridge_data.contours = pruned_contours
         ridge_data.junctions = pruned_junctions
         return ridge_data
-
-    def detect_lines(self, image: str | Path | NDArray) -> RidgeData:
-        """Main method to detect lines in an image.
-
-        Only 8-bit grayscale images are supported. Other image types will be converted
-        automaically.
-
-        If passing an array, assumes the image is in (height, width) or (height, width,
-        channels).
-
-        Parameters
-        ----------
-        image : str | Path | NDArray
-            The input image to process.
-
-        Returns
-        -------
-        RidgeData
-            The processed ridge data containing detected lines and their properties.
-        """
-        if isinstance(image, (str, Path)):
-            image = iio.imread(image)
-        data = RidgeData(image=image)
-
-        filtered_data = self.apply_filtering(data.gray)
-        line_points = LinePoints(filtered_data, dark_mode=self.mode)
-        contours, junctions = self.compute_contours(filtered_data, line_points)
-        data.contours = contours
-        data.junctions = junctions
-        if self.estimate_width:
-            data = self.compute_line_width(data, filtered_data)
-        data = self.prune_contours(data)
-        self.data = data
-        return self.data
 
     def save_results(
         self,

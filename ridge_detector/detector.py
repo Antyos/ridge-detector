@@ -98,17 +98,14 @@ class RidgeData:
     _width_points: Optional[tuple[list[NDArray], list[NDArray]]] = None
 
     def __init__(self, image: NDArray[np.floating | np.integer]):
-        # Normalize to uint8 if needed. The type checker cannot infer the dtype
-        # correctly here, so we use a cast to ensure the type is correct.
-        if image.dtype == np.uint8:
-            self.image = cast(NDArray[np.uint8], image)
-        else:
-            self.image = cast(
-                NDArray[np.uint8],
-                ((image - image.min()) / (image.max() - image.min()) * 255).astype(
-                    np.uint8
-                ),
+        # Normalize to uint8 if needed.
+        if image.dtype != np.uint8:
+            image = ((image - image.min()) / (image.max() - image.min()) * 255).astype(
+                np.uint8
             )
+        # The type checker cannot infer the dtype correctly here, so we use a cast to
+        # ensure the type is correct.
+        self.image = cast(NDArray[np.uint8], image)
 
         # Convert to grayscale
         self.gray = (
@@ -351,6 +348,33 @@ class RidgeData:
 
 
 class RidgeDetector:
+    """Detect ridges in images like the ImageJ Ridge Detection plugin.
+
+    Parameters
+    ----------
+    line_widths : ArrayLikeInt, optional
+        The line widths to use for ridge detection. Default is np.arange(1, 3).
+    low_contrast : int, optional
+        The lower contrast threshold for ridge detection. Default is 100.
+    high_contrast : int, optional
+        The upper contrast threshold for ridge detection. Default is 200.
+    min_len : int, default=5
+        Ignore ridges shorter than this length.
+    max_len : int, optional
+        Ignore ridges longer than this length. If 0, no maximum length is applied.
+    dark_line : bool, default=True
+        If True, detect dark lines on a light background. If False, detect light lines
+        on a dark background.
+    estimate_width : bool, default=True
+        If True, estimate the width of the detected lines.
+    extend_line : bool, default=False
+        If True, extend the detected lines based on the gradient direction.
+    correct_pos : bool, default=False
+        If True, correct the position of the detected lines based on the gradient
+        direction. This can help improve the accuracy of the line positions, but may
+        introduce artifacts in some cases. Unused if estimate_width is False.
+    """
+
     data: Optional[RidgeData] = None
 
     def __init__(
@@ -397,6 +421,7 @@ class RidgeDetector:
         self.mode = LinesUtil.MODE.dark if self.dark_line else LinesUtil.MODE.light
 
     def apply_filtering(self, data: RidgeData) -> FilteredData:
+        """Apply filtering to base image data."""
         if data is None:
             raise ValueError("Ridge data is not initialized.")
         width = data.width
@@ -504,6 +529,7 @@ class RidgeDetector:
     def compute_line_points(
         self, ridge_data: RidgeData, filtered_data: FilteredData
     ) -> LinePoints:
+        """Compute the line points from the filtered data."""
         ry = filtered_data.grady
         rx = filtered_data.gradx
         ryy = filtered_data.derivatives[2, ...]
@@ -552,6 +578,7 @@ class RidgeDetector:
         label: NDArray[np.integer],
         filtered_data: FilteredData,
     ):
+        """Extend the lines in the ridge data based on the gradient direction."""
         height, width = label.shape[:2]
         s = self.mode.value
         length = 2.5 * filtered_data.sigma_map
@@ -760,7 +787,11 @@ class RidgeDetector:
         ridge_data: RidgeData,
         filtered_data: FilteredData,
         line_points: LinePoints,
-    ):
+    ) -> None:
+        """Compute the contours from the line points.
+
+        Mutates `ridge_data`.
+        """
         width = ridge_data.width
         height = ridge_data.height
         label = np.zeros((height, width), dtype=int)
@@ -1109,6 +1140,7 @@ class RidgeDetector:
                     contour.angle = (contour.angle + np.pi) % (2 * np.pi)
 
     def compute_line_width(self, ridge_data: RidgeData, filtered_data: FilteredData):
+        """Compute the line width of the contours in the ridge data."""
         height = ridge_data.height
         width = ridge_data.width
         length = 2.5 * filtered_data.sigma_map
@@ -1199,6 +1231,7 @@ class RidgeDetector:
         return ridge_data
 
     def prune_contours(self, ridge_data: RidgeData) -> RidgeData:
+        """Prune contours based on their length."""
         if self.min_len < 0:
             return ridge_data
 
@@ -1219,8 +1252,27 @@ class RidgeDetector:
         ridge_data.junctions = pruned_junctions
         return ridge_data
 
-    def detect_lines(self, image: str | Path | NDArray):
-        image = iio.imread(image) if isinstance(image, (str, Path)) else image
+    def detect_lines(self, image: str | Path | NDArray) -> RidgeData:
+        """Main method to detect lines in an image.
+
+        Only 8-bit grayscale images are supported. Other image types will be converted
+        automaically.
+
+        If passing an array, assumes the image is in (height, width) or (height, width,
+        channels).
+
+        Parameters
+        ----------
+        image : str | Path | NDArray
+            The input image to process.
+
+        Returns
+        -------
+        RidgeData
+            The processed ridge data containing detected lines and their properties.
+        """
+        if isinstance(image, (str, Path)):
+            image = iio.imread(image)
         data = RidgeData(image=image)
 
         filtered_data = self.apply_filtering(data)
@@ -1240,6 +1292,12 @@ class RidgeDetector:
         draw_junc=False,
         draw_width=True,
     ):
+        """Export the result images to files.
+
+        This is the same as calling:
+        >>> ridge_data = RidgeDetector(...).detect_lines(image)
+        >>> ridge_data.export_images()
+        """
         if self.data is None:
             raise ValueError("Ridge data is not initialized.")
         return self.data.export_images(
@@ -1251,6 +1309,12 @@ class RidgeDetector:
         )
 
     def show_results(self, figsize=10, show=True):
+        """Plot the results of the ridge detection using matplotlib.
+
+        This is the same as calling:
+        >>> ridge_data = RidgeDetector(...).detect_lines(image)
+        >>> ridge_data.plot(...)
+        """
         if self.data is None:
             raise ValueError("Ridge data is not initialized.")
         self.data.plot(figsize=figsize, show_width=self.estimate_width, show=show)

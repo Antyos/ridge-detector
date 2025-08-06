@@ -1018,33 +1018,27 @@ class RidgeDetector:
                                     )
                                 break
                             j = -1
+                            contour = None
                         else:
-                            for j in range(ridge_data.contours[k].num):
-                                if (
-                                    ridge_data.contours[k].row[j]
-                                    == line_points.posy[y, x]
-                                    and ridge_data.contours[k].col[j]
-                                    == line_points.posx[y, x]
-                                ):
-                                    break
-                            else:
-                                j = -1
-                            if j == ridge_data.contours[k].num:
+                            contour = ridge_data.contours[k]
+                            # Find the index of the first point on the other line
+                            mask = (contour.row == line_points.posy[y, x]) & (
+                                contour.col == line_points.posx[y, x]
+                            )
+                            # np.where() is faster than np.argmax() for small arrays
+                            # (<500 elements), which is the likely case here. See:
+                            # https://stackoverflow.com/a/48360950. Though, we are
+                            # already looping over the array since we call mask.any(),
+                            # so who knows.
+                            j = np.where(mask)[0][0] if mask.any() else -1
+                            if j == len(contour):
                                 # No point found on the other line, a double response occurred
                                 dist = np.sqrt(
-                                    (
-                                        line_points.posy[y, x]
-                                        - ridge_data.contours[k].row
-                                    )
-                                    ** 2
-                                    + (
-                                        line_points.posx[y, x]
-                                        - ridge_data.contours[k].col
-                                    )
-                                    ** 2
+                                    (line_points.posy[y, x] - contour.row) ** 2
+                                    + (line_points.posx[y, x] - contour.col) ** 2
                                 )
                                 j = np.argmin(dist)
-                                beta = ridge_data.contours[k].angle[j]
+                                beta = contour.angle[j]
                                 if beta >= np.pi:
                                     beta -= np.pi
                                 diff1 = abs(beta - last_beta)
@@ -1054,12 +1048,14 @@ class RidgeDetector:
                                 if diff2 >= np.pi:
                                     diff2 = 2.0 * np.pi - diff2
                                 line_data.append(
-                                    row=ridge_data.contours[k].row[j],
-                                    col=ridge_data.contours[k].col[j],
+                                    row=contour.row[j],
+                                    col=contour.col[j],
                                     angle=beta if diff1 < diff2 else beta + np.pi,
-                                    response=ridge_data.contours[k].response[j],
+                                    response=contour.response[j],
                                 )
-                        if 0 < j < ridge_data.contours[k].num - 1:
+                            elif j == -1:
+                                contour = None
+                        if contour and 0 < j < len(contour) - 1:
                             # Determine contour class
                             if it == 1:
                                 cls = Line.ContourClass.start_junc

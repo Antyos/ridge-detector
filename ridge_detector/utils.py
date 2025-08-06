@@ -123,7 +123,7 @@ class Line:
         width_r: Optional[ArrayLikeFloat] = None,
         asymmetry: Optional[ArrayLikeFloat] = None,
         intensity: Optional[ArrayLikeFloat] = None,
-        contour_class: Optional["Line.ContourClass"] = None,
+        contour_class: Optional["ContourClass"] = None,
     ):
         self.id = Line.id_counter
         Line.id_counter += 1
@@ -153,17 +153,11 @@ class Line:
     def num(self):
         return len(self)
 
-    def get_contour_class(self):
-        return self.contour_class
-
-    def get_contour_class_str(self):
+    @property
+    def contour_class_str(self):
         if self.contour_class:
-            # Return the name of the contour class without the prefix "cont_"
-            return self.contour_class.name[self.contour_class.name.find("_") + 1 :]
+            return self.contour_class.name
         return "none"
-
-    def set_contour_class(self, contour_class):
-        self.contour_class = contour_class
 
     def get_x_coordinates(self):
         return self.col
@@ -196,7 +190,7 @@ class Line:
         return self.id
 
     def get_line_class(self):
-        return self.get_contour_class()
+        return self.contour_class
 
     def get_start_or_end_position(self, x, y):
         dist_start = ((self.col[0] - x) ** 2 + (self.row[0] - y) ** 2) ** 0.5

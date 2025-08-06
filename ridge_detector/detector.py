@@ -297,7 +297,7 @@ class RidgeData:
                     "length": repeat(contour.estimate_length(), contour.num),
                     "line_width": contour.estimate_width(),
                     "angle_of_normal": contour.angle,
-                    "class": repeat(contour.get_contour_class_str(), contour.num),
+                    "class": repeat(contour.contour_class_str, contour.num),
                 }
             )
         contour_data = {
@@ -511,10 +511,7 @@ class RidgeDetector:
         max_line = np.ceil(length * 1.2).astype(int)
         for idx_cont, contour in enumerate(ridge_data.contours):
             num_pnt = contour.num
-            if (
-                len(contour) == 1
-                or contour.get_contour_class() == Line.ContourClass.closed
-            ):
+            if len(contour) == 1 or contour.contour_class == Line.ContourClass.closed:
                 continue
 
             # Assign initial values for m and j so they aren't unbound
@@ -531,7 +528,7 @@ class RidgeDetector:
                 tresp = contour.response
                 if it == -1:
                     # Start point of the line.
-                    if contour.get_contour_class() in [
+                    if contour.contour_class in [
                         Line.ContourClass.start_junc,
                         Line.ContourClass.both_junc,
                     ]:
@@ -549,7 +546,7 @@ class RidgeDetector:
                     response = tresp[0]
                 else:
                     # End point of the line.
-                    if contour.get_contour_class() in [
+                    if contour.contour_class in [
                         Line.ContourClass.end_junc,
                         Line.ContourClass.both_junc,
                     ]:
@@ -686,21 +683,15 @@ class RidgeDetector:
                     # Add the junction point only if it is not one of the other line's endpoints.
                     if other_contour is not None and 0 < j < other_contour.num - 1:
                         if it == -1:
-                            if (
-                                contour.get_contour_class()
-                                == Line.ContourClass.end_junc
-                            ):
-                                contour.set_contour_class(Line.ContourClass.both_junc)
+                            if contour.contour_class == Line.ContourClass.end_junc:
+                                contour.contour_class = Line.ContourClass.both_junc
                             else:
-                                contour.set_contour_class(Line.ContourClass.start_junc)
+                                contour.contour_class = Line.ContourClass.start_junc
                         else:
-                            if (
-                                contour.get_contour_class()
-                                == Line.ContourClass.start_junc
-                            ):
-                                contour.set_contour_class(Line.ContourClass.both_junc)
+                            if contour.contour_class == Line.ContourClass.start_junc:
+                                contour.contour_class = Line.ContourClass.both_junc
                             else:
-                                contour.set_contour_class(Line.ContourClass.end_junc)
+                                contour.contour_class = Line.ContourClass.end_junc
 
                         if it == -1:
                             contour_idx = 0

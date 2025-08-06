@@ -1087,19 +1087,13 @@ class RidgeDetector:
             if len(line_data) > 1:
                 ridge_data.contours.append(line_data.to_line(contour_class=cls))
             else:
-                # Delete the point from the label image; using maxx and maxy as coordinates in the label image
-                for i, j in product(range(-1, 2), repeat=2):
-                    if (
-                        label[
-                            LinesUtil.BR(maxy + i, height),
-                            LinesUtil.BC(maxx + j, width),
-                        ]
-                        == len(ridge_data.contours) + 1
-                    ):
-                        label[
-                            LinesUtil.BR(maxy + i, height),
-                            LinesUtil.BC(maxx + j, width),
-                        ] = 0
+                # Delete the point from the label image; using maxx and maxy as
+                # coordinates in the label image
+                i, j = np.meshgrid([-1, 0, 1], [-1, 0, 1])
+                rows = LinesUtil.BR(maxy + i, height)
+                cols = LinesUtil.BC(maxx + j, width)
+                mask = label[rows, cols] == len(ridge_data.contours) + 1
+                label[rows[mask], cols[mask]] = 0
 
         if self.extend_line:
             self.extend_lines(ridge_data, label, filtered_data)

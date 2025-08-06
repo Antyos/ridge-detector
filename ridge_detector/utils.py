@@ -694,14 +694,6 @@ def fill_gaps(
     return master
 
 
-def normalize_to_half_circle(angle):
-    if angle < 0.0:
-        angle += 2.0 * np.pi
-    if angle >= np.pi:
-        angle -= np.pi
-    return angle
-
-
 def interpolate_response(resp, x, y, px, py, width, height):
     i1 = resp[
         LinesUtil.LINCOOR(

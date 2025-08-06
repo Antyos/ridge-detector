@@ -35,7 +35,6 @@ from ridge_detector.utils import (
     convolve_gauss,
     fix_locations,
     interpolate_gradient_test,
-    normalize_to_half_circle,
 )
 
 
@@ -68,6 +67,18 @@ class LinePoints:
         self.normy = np.zeros(shape, dtype=float)
         self.posx = np.zeros(shape, dtype=float)
         self.posy = np.zeros(shape, dtype=float)
+
+    def get_alpha(self, x, y):
+        """Calculate the angle of the normal vector at the given point.
+
+        Equivalent to:
+
+        >>> np.arctan2(self.normy[y, x], -self.normx[y, x]) % np.pi
+        """
+        if self.normx[y, x] == 0.0 and self.normy[y, x] == 0.0:
+            return 0.0
+        angle = np.arctan2(self.normy[y, x], -self.normx[y, x])
+        return angle % np.pi
 
 
 class RidgeData:
@@ -765,9 +776,7 @@ class RidgeDetector:
                 cross[indx[maxy, maxx] - 1].done = True
 
             # Select line direction
-            nx = -line_points.normx[maxy, maxx]
-            ny = line_points.normy[maxy, maxx]
-            alpha = normalize_to_half_circle(np.arctan2(ny, nx))
+            alpha = line_points.get_alpha(x=maxx, y=maxy)
             octant = int(np.floor(4.0 / np.pi * alpha + 0.5)) % 4
 
             """ * Select normal to the line. The normal points to the right of the line as the
@@ -800,10 +809,8 @@ class RidgeDetector:
                 if nexty < 0 or nexty >= height or nextx < 0 or nextx >= width:
                     continue
                 if line_points.ismax[nexty, nextx] > 0:
-                    nx = -line_points.normx[nexty, nextx]
-                    ny = line_points.normy[nexty, nextx]
-                    nextalpha = normalize_to_half_circle(np.arctan2(ny, nx))
-                    diff = abs(alpha - nextalpha)
+                    next_alpha = line_points.get_alpha(x=nextx, y=nexty)
+                    diff = abs(alpha - next_alpha)
                     if diff >= np.pi / 2.0:
                         diff = np.pi - diff
                     if diff < MAX_ANGLE_DIFFERENCE:
@@ -813,9 +820,7 @@ class RidgeDetector:
 
             for it in range(1, 3):
                 y, x = maxy, maxx
-                ny, nx = line_points.normy[y, x], -line_points.normx[y, x]
-
-                alpha = normalize_to_half_circle(np.arctan2(ny, nx))
+                alpha = line_points.get_alpha(x=x, y=y)
                 last_octant = (
                     int(np.floor(4.0 / np.pi * alpha + 0.5)) % 4
                     if it == 1
@@ -830,11 +835,10 @@ class RidgeDetector:
                     line_data.reverse()
 
                 while True:
-                    ny, nx = line_points.normy[y, x], -line_points.normx[y, x]
                     py, px = line_points.posy[y, x], line_points.posx[y, x]
 
                     # Orient line direction with respect to the last line direction
-                    alpha = normalize_to_half_circle(np.arctan2(ny, nx))
+                    alpha = line_points.get_alpha(x=x, y=y)
                     octant = int(np.floor(4.0 / np.pi * alpha + 0.5)) % 4
 
                     if octant == 0 and 3 <= last_octant <= 5:
@@ -867,10 +871,8 @@ class RidgeDetector:
                         dy = nextpy - py
                         dx = nextpx - px
                         dist = np.sqrt(dx**2 + dy**2)
-                        ny = line_points.normy[nexty, nextx]
-                        nx = -line_points.normx[nexty, nextx]
-                        nextalpha = normalize_to_half_circle(np.arctan2(ny, nx))
-                        diff = abs(alpha - nextalpha)
+                        next_alpha = line_points.get_alpha(x=nextx, y=nexty)
+                        diff = abs(alpha - next_alpha)
                         if diff >= np.pi / 2.0:
                             diff = np.pi - diff
                         diff = dist + diff
@@ -887,10 +889,8 @@ class RidgeDetector:
                         if nexty < 0 or nexty >= height or nextx < 0 or nextx >= width:
                             continue
                         if line_points.ismax[nexty, nextx] > 0:
-                            ny = line_points.normy[nexty, nextx]
-                            nx = -line_points.normx[nexty, nextx]
-                            nextalpha = normalize_to_half_circle(np.arctan2(ny, nx))
-                            diff = abs(alpha - nextalpha)
+                            next_alpha = line_points.get_alpha(x=nextx, y=nexty)
+                            diff = abs(alpha - next_alpha)
                             if diff >= np.pi / 2.0:
                                 diff = np.pi - diff
                             if diff < MAX_ANGLE_DIFFERENCE:
@@ -906,15 +906,18 @@ class RidgeDetector:
                     y += dirtab[octant][nexti][0]
                     x += dirtab[octant][nexti][1]
 
-                    # Orient normal to the line direction with respect to the last normal
+                    # Orient normal to the line direction with respect to the last
+                    # normal. For some reason, `line_points.get_alpha()+np.pi/2` doesn't
+                    # work, so we do it manually.
                     ny = line_points.normy[y, x]
                     nx = line_points.normx[y, x]
-
-                    beta = normalize_to_half_circle(np.arctan2(ny, nx))
+                    # Normalize alternative beta (180-degrees rotation)
+                    beta = (np.arctan2(ny, nx)) % np.pi
+                    # Orient normal to the line direction with respect to the last normal
                     diff1 = np.minimum(
                         abs(beta - last_beta), 2.0 * np.pi - abs(beta - last_beta)
                     )
-                    # Normalize alternative beta
+                    # Normalize alternative beta (180-degrees rotation)
                     alt_beta = (beta + np.pi) % (2.0 * np.pi)
                     diff2 = np.minimum(
                         abs(alt_beta - last_beta),

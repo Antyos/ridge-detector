@@ -2,7 +2,7 @@ import colorsys
 import math
 import random
 from collections.abc import Sequence
-from enum import Enum
+from enum import Enum, IntEnum
 from typing import Optional
 
 import matplotlib.pyplot as plt
@@ -214,14 +214,14 @@ class Line:
     def reset_counter(cls):
         cls.id_counter = 0
 
-    class ContourClass(Enum):
-        no_junc = (1,)
+    class ContourClass(IntEnum):
+        no_junc = 1
         """Neither end point is a junction."""
-        start_junc = (2,)
+        start_junc = 2
         """Only the start point of the line is a junction."""
-        end_junc = (3,)
+        end_junc = 3
         """Only the end point of the line is a junction."""
-        both_junc = (4,)
+        both_junc = 4
         """Both end points of the line are junctions."""
         closed = 5
         """Contour is closed, i.e., the start and end points are the same."""

@@ -5,7 +5,6 @@ from typing import Optional, cast
 
 import cv2
 import imageio.v3 as iio
-import matplotlib.pyplot as plt
 import numpy as np
 import skimage as ski
 from numpy.typing import NDArray
@@ -229,6 +228,35 @@ class RidgeData:
             mask = ski.draw.polygon2mask(self.shape, poly_points[:, [1, 0]])
             binary_image[mask] = 0
         return binary_image
+
+    def plot(self, figsize: float = 16, show_width: bool = True, show: bool = True):
+        """Plot the contours using matplotlib."""
+        try:
+            import matplotlib.pyplot as plt
+        except ImportError:
+            raise ImportError(
+                "matplotlib is required for plotting. "
+                "Please install it with 'pip install matplotlib'."
+            )
+        if show_width:
+            fig, axes = plt.subplots(2, 2, figsize=(figsize, figsize))
+            axes[0, 0].imshow(self.get_image_contours(show_width=False))
+            axes[0, 0].set_title("contours")
+            axes[0, 1].imshow(self.get_image_contours(show_width=True))
+            axes[0, 1].set_title("contours and widths")
+            axes[1, 0].imshow(self.get_binary_contours(), cmap="gray")
+            axes[1, 0].set_title("binary contours")
+            axes[1, 1].imshow(self.get_binary_widths(), cmap="gray")
+            axes[1, 1].set_title("binary widths")
+        else:
+            fig, axes = plt.subplots(1, 2, figsize=(figsize, figsize / 2))
+            axes[0].imshow(self.get_image_contours(show_width=False))
+            axes[0].set_title("contours")
+            axes[1].imshow(self.get_binary_contours(), cmap="gray")
+            axes[1].set_title("binary contours")
+        if show:
+            plt.show()
+        return fig
 
     def export_images(
         self,
@@ -1231,24 +1259,7 @@ class RidgeDetector:
     def show_results(self, figsize=16, show=True):
         if self.data is None:
             raise ValueError("Ridge data is not initialized.")
-        if self.estimate_width:
-            fig, axes = plt.subplots(2, 2, figsize=(figsize, figsize))
-            axes[0, 0].imshow(self.data.get_image_contours(show_width=False))
-            axes[0, 0].set_title("contours")
-            axes[0, 1].imshow(self.data.get_image_contours(show_width=True))
-            axes[0, 1].set_title("contours and widths")
-            axes[1, 0].imshow(self.data.get_binary_contours(), cmap="gray")
-            axes[1, 0].set_title("binary contours")
-            axes[1, 1].imshow(self.data.get_binary_widths(), cmap="gray")
-            axes[1, 1].set_title("binary widths")
-        else:
-            fig, axes = plt.subplots(1, 2, figsize=(figsize, figsize / 2))
-            axes[0].imshow(self.data.get_image_contours(show_width=False))
-            axes[0].set_title("contours")
-            axes[1].imshow(self.data.get_binary_contours(), cmap="gray")
-            axes[1].set_title("binary contours")
-        if show:
-            plt.show()
+        self.data.plot(figsize=figsize, show_width=self.estimate_width, show=show)
 
 
 if __name__ == "__main__":

@@ -53,6 +53,8 @@ class FilteredData:
 
 
 class LinePoints:
+    eigval: NDArray[np.floating]
+    """For some reason, this is distinct from `FilteredData.eigvals`."""
     normx: NDArray[np.floating]
     normy: NDArray[np.floating]
     posx: NDArray[np.floating]
@@ -60,11 +62,17 @@ class LinePoints:
     ismax: NDArray[np.integer]
 
     def __init__(self, shape: tuple[int, ...]):
+        self._shape = shape
+        self.eigval = np.zeros(shape, dtype=float)
         self.ismax = np.zeros(shape, dtype=int)
         self.normx = np.zeros(shape, dtype=float)
         self.normy = np.zeros(shape, dtype=float)
         self.posx = np.zeros(shape, dtype=float)
         self.posy = np.zeros(shape, dtype=float)
+
+    @property
+    def shape(self) -> tuple[int, ...]:
+        return self._shape
 
     def get_alpha(self, x, y):
         """Calculate the angle of the normal vector at the given point.
@@ -85,10 +93,6 @@ class RidgeData:
     # Input data
     image: NDArray[np.uint8]
     gray: NDArray[np.uint8]
-
-    # Line point computation results
-    eigval: NDArray[np.floating]
-    """For some reason, this is distinct from `FilteredData.eigvals`."""
 
     # Contour detection results
     contours: list[Line]
@@ -114,7 +118,6 @@ class RidgeData:
             else self.image
         ).astype(np.uint8)
 
-        self.eigval = np.zeros(self.shape, dtype=float)
         self.contours = []
         self.junctions = []
 
@@ -524,7 +527,7 @@ class RidgeDetector:
         )
 
     def compute_line_points(
-        self, ridge_data: RidgeData, filtered_data: FilteredData
+        self, shape: tuple[int, ...], filtered_data: FilteredData
     ) -> LinePoints:
         """Compute the line points from the filtered data."""
         ry = filtered_data.grady
@@ -533,9 +536,10 @@ class RidgeDetector:
         rxy = filtered_data.derivatives[3, ...]
         rxx = filtered_data.derivatives[4, ...]
 
+        line_data = LinePoints(shape)
         val = filtered_data.eigvals[:, :, 0] * self.mode.value
         val_mask = val > 0.0
-        ridge_data.eigval[val_mask] = val[val_mask]
+        line_data.eigval[val_mask] = val[val_mask]
 
         # Equations (22) and (23) in
         # Steger, C. (1998). An unbiased detector of curvilinear structures. (DOI: 10.1109/34.659930)
@@ -558,13 +562,12 @@ class RidgeDetector:
             & (val < filtered_data.upper_thresh)
         )
 
-        line_data = LinePoints(ridge_data.shape)
         line_data.ismax[upper_mask] = 2
         line_data.ismax[lower_mask] = 1
 
         line_data.normy[base_mask] = ny[base_mask]
         line_data.normx[base_mask] = nx[base_mask]
-        Y, X = np.mgrid[: ridge_data.height, : ridge_data.width]
+        Y, X = np.mgrid[: line_data.shape[0], : line_data.shape[1]]
         line_data.posy[base_mask] = Y[base_mask] + py[base_mask]
         line_data.posx[base_mask] = X[base_mask] + px[base_mask]
         return line_data
@@ -782,12 +785,11 @@ class RidgeDetector:
 
     def compute_contours(
         self,
-        eigval: NDArray[np.floating],
         filtered_data: FilteredData,
         line_points: LinePoints,
     ) -> tuple[list[Line], list[Junction]]:
         """Compute the contours from the line points."""
-        height, width = eigval.shape
+        height, width = line_points.eigval.shape
         label = np.zeros((height, width), dtype=int)
         indx = np.zeros((height, width), dtype=int)
         contours: list[Line] = []
@@ -796,10 +798,12 @@ class RidgeDetector:
         crossrefs: list[Crossref] = []
         for r_idx, c_idx in product(range(height), range(width)):
             if line_points.ismax[r_idx, c_idx] >= 2:
-                crossrefs.append(Crossref(r_idx, c_idx, eigval[r_idx, c_idx], False))
+                crossrefs.append(
+                    Crossref(r_idx, c_idx, line_points.eigval[r_idx, c_idx], False)
+                )
         area = len(crossrefs)
 
-        response_2d = eigval.reshape(height, width)
+        response_2d = line_points.eigval.reshape(height, width)
         resp_dr = convolve(response_2d, kernel_r, mode="mirror")
         resp_dc = convolve(response_2d, kernel_c, mode="mirror")
         resp_dd = convolve(response_2d, kernel_d, mode="mirror")
@@ -1273,10 +1277,8 @@ class RidgeDetector:
         data = RidgeData(image=image)
 
         filtered_data = self.apply_filtering(data.gray)
-        line_points = self.compute_line_points(data, filtered_data)
-        contours, junctions = self.compute_contours(
-            data.eigval, filtered_data, line_points
-        )
+        line_points = self.compute_line_points(data.shape, filtered_data)
+        contours, junctions = self.compute_contours(filtered_data, line_points)
         data.contours = contours
         data.junctions = junctions
         if self.estimate_width:

@@ -33,7 +33,6 @@ from ridge_detector.utils import (
     bresenham,
     closest_point,
     convolve_gauss,
-    fix_locations,
     interpolate_gradient_test,
 )
 
@@ -315,7 +314,12 @@ class RidgeData:
             key: list(chain.from_iterable(contour[key] for contour in contour_dicts))
             for key in contour_dicts[0].keys()
         }
-        return pd.DataFrame(contour_data)
+        dataframe = pd.DataFrame(contour_data)
+        contour_class_category = pd.CategoricalDtype(
+            categories=[cls.name for cls in Line.ContourClass], ordered=True
+        )
+        dataframe["class"] = dataframe["class"].astype(contour_class_category)
+        return dataframe
 
 
 class RidgeDetector:
@@ -1132,12 +1136,9 @@ class RidgeDetector:
             width_r = np.zeros(num_points, dtype=float)
             grad_l = np.zeros(num_points, dtype=float)
             grad_r = np.zeros(num_points, dtype=float)
-            pos_x = np.zeros(num_points, dtype=float)
-            pos_y = np.zeros(num_points, dtype=float)
 
             for j in range(num_points):
                 py, px = contour.row[j], contour.col[j]
-                pos_y[j], pos_x[j] = py, px
                 r, c = LinesUtil.BR(round(py), height), LinesUtil.BC(round(px), width)
                 ny, nx = np.sin(contour.angle[j]), np.cos(contour.angle[j])
 
@@ -1166,17 +1167,13 @@ class RidgeDetector:
                                     grad_l[j] = grad_rl[y, x]
                                     width_l[j] = abs(t)
                                 break
-            fix_locations(
-                contour,
+            contour.fix_locations(
                 width_l,
                 width_r,
                 grad_l,
                 grad_r,
-                pos_y,
-                pos_x,
                 filtered_data.sigma_map,
                 self.correct_pos,
-                self.mode,
             )
         return ridge_data
 

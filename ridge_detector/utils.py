@@ -242,6 +242,84 @@ class Line:
         closed = 5
         """Contour is closed, i.e., the start and end points are the same."""
 
+    def fix_locations(
+        self,
+        width_l: NDArray,
+        width_r: NDArray,
+        grad_l: NDArray,
+        grad_r: NDArray,
+        sigma_map: NDArray,
+        correct_pos=True,
+    ):
+        num_points = len(self)
+        correction = np.zeros(num_points, dtype=float)
+        asymm = np.zeros(num_points, dtype=float)
+
+        # Fill gaps in width_l and width_r
+        fill_gaps(width_l, grad_l, None, self)
+        fill_gaps(width_r, grad_r, None, self)
+
+        # Correct positions if required
+        if correct_pos:
+            correct_start = (
+                self.contour_class
+                in [
+                    Line.ContourClass.no_junc,
+                    Line.ContourClass.end_junc,
+                    Line.ContourClass.closed,
+                ]
+            ) and (width_r[0] > 0 and width_l[0] > 0)
+            correct_end = (
+                self.contour_class
+                in [
+                    Line.ContourClass.no_junc,
+                    Line.ContourClass.start_junc,
+                    Line.ContourClass.closed,
+                ]
+            ) and (width_r[-1] > 0 and width_l[-1] > 0)
+
+            for i in range(num_points):
+                if width_r[i] > 0 and width_l[i] > 0:
+                    w_est = (width_r[i] + width_l[i]) * LINE_WIDTH_COMPENSATION
+                    if grad_r[i] <= grad_l[i]:
+                        r_est = grad_r[i] / grad_l[i]
+                        weak_is_r = True
+                    else:
+                        r_est = grad_l[i] / grad_r[i]
+                        weak_is_r = False
+                    sigma = sigma_map[int(self.row[i]), int(self.col[i])]
+                    w_real, h_real, corr, w_strong, w_weak = Correct.line_corrections(
+                        sigma, w_est, r_est
+                    )
+                    w_real /= LINE_WIDTH_COMPENSATION
+                    corr /= LINE_WIDTH_COMPENSATION
+                    width_r[i], width_l[i] = w_real, w_real
+                    if weak_is_r:
+                        asymm[i] = h_real
+                        correction[i] = -corr
+                    else:
+                        asymm[i] = -h_real
+                        correction[i] = corr
+
+            fill_gaps(width_l, correction, asymm, self)
+            width_r = width_l[:]
+
+            if not correct_start:
+                correction[0] = 0
+            if not correct_end:
+                correction[-1] = 0
+
+            self.row += correction * np.sin(self.angle)
+            self.col += correction * np.cos(self.angle)
+
+        # Update position of line and add extracted width
+        width_l = gaussian_filter1d(width_l, 3.0, mode="mirror")
+        width_r = gaussian_filter1d(width_r, 3.0, mode="mirror")
+        self.width_l = np.array([float(w) for w in width_l])
+        self.width_r = np.array([float(w) for w in width_r])
+
+        return self
+
 
 class Crossref:
     def __init__(self, y=0, x=0, value=0.0, done=False):
@@ -757,94 +835,6 @@ def interpolate_gradient(
     gx = (1 - gfy) * ((1 - gfx) * gx1 + gfx * gx2) + gfy * ((1 - gfx) * gx3 + gfx * gx4)
     gy = (1 - gfy) * ((1 - gfx) * gy1 + gfx * gy2) + gfy * ((1 - gfx) * gy3 + gfx * gy4)
     return gx, gy
-
-
-def fix_locations(
-    cont: Line,
-    width_l,
-    width_r,
-    grad_l,
-    grad_r,
-    pos_y,
-    pos_x,
-    sigma_map,
-    correct_pos=True,
-    mode=LinesUtil.MODE.dark,
-):
-    num_points = cont.num
-    correction = np.zeros(num_points, dtype=float)
-    asymm = np.zeros(num_points, dtype=float)
-
-    # Fill gaps in width_l and width_r
-    fill_gaps(width_l, grad_l, None, cont)
-    fill_gaps(width_r, grad_r, None, cont)
-
-    # Correct positions if required
-    if correct_pos:
-        correct_start = (
-            cont.contour_class
-            in [
-                Line.ContourClass.no_junc,
-                Line.ContourClass.end_junc,
-                Line.ContourClass.closed,
-            ]
-        ) and (width_r[0] > 0 and width_l[0] > 0)
-        correct_end = (
-            cont.contour_class
-            in [
-                Line.ContourClass.no_junc,
-                Line.ContourClass.start_junc,
-                Line.ContourClass.closed,
-            ]
-        ) and (width_r[-1] > 0 and width_l[-1] > 0)
-
-        for i in range(num_points):
-            if width_r[i] > 0 and width_l[i] > 0:
-                w_est = (width_r[i] + width_l[i]) * LINE_WIDTH_COMPENSATION
-                if grad_r[i] <= grad_l[i]:
-                    r_est = grad_r[i] / grad_l[i]
-                    weak_is_r = True
-                else:
-                    r_est = grad_l[i] / grad_r[i]
-                    weak_is_r = False
-                sigma = sigma_map[int(cont.row[i]), int(cont.col[i])]
-                w_real, h_real, corr, w_strong, w_weak = Correct.line_corrections(
-                    sigma, w_est, r_est
-                )
-                w_real /= LINE_WIDTH_COMPENSATION
-                corr /= LINE_WIDTH_COMPENSATION
-                width_r[i], width_l[i] = w_real, w_real
-                if weak_is_r:
-                    asymm[i] = h_real
-                    correction[i] = -corr
-                else:
-                    asymm[i] = -h_real
-                    correction[i] = corr
-
-        fill_gaps(width_l, correction, asymm, cont)
-        width_r = width_l[:]
-
-        if not correct_start:
-            correction[0] = 0
-        if not correct_end:
-            correction[-1] = 0
-
-        for i in range(num_points):
-            py, px = pos_y[i], pos_x[i]
-            ny, nx = np.sin(cont.angle[i]), np.cos(cont.angle[i])
-            px += correction[i] * nx
-            py += correction[i] * ny
-            pos_y[i], pos_x[i] = py, px
-
-    # Update position of line and add extracted width
-    width_l = gaussian_filter1d(width_l, 3.0, mode="mirror")
-    width_r = gaussian_filter1d(width_r, 3.0, mode="mirror")
-    cont.width_l = np.array([float(w) for w in width_l])
-    cont.width_r = np.array([float(w) for w in width_r])
-    cont.row = np.array([float(y) for y in pos_y])
-    cont.col = np.array([float(x) for x in pos_x])
-
-    return cont
 
 
 def color_line_segments(image: NDArray, conts: Sequence[Line]):

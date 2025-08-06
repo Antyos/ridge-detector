@@ -513,7 +513,7 @@ class RidgeDetector:
             num_pnt = contour.num
             if (
                 len(contour) == 1
-                or contour.get_contour_class() == LinesUtil.ContourClass.cont_closed
+                or contour.get_contour_class() == Line.ContourClass.cont_closed
             ):
                 continue
 
@@ -532,8 +532,8 @@ class RidgeDetector:
                 if it == -1:
                     # Start point of the line.
                     if contour.get_contour_class() in [
-                        LinesUtil.ContourClass.cont_start_junc,
-                        LinesUtil.ContourClass.cont_both_junc,
+                        Line.ContourClass.cont_start_junc,
+                        Line.ContourClass.cont_both_junc,
                     ]:
                         continue
                     dy, dx = trow[1] - trow[0], tcol[1] - tcol[0]
@@ -550,8 +550,8 @@ class RidgeDetector:
                 else:
                     # End point of the line.
                     if contour.get_contour_class() in [
-                        LinesUtil.ContourClass.cont_end_junc,
-                        LinesUtil.ContourClass.cont_both_junc,
+                        Line.ContourClass.cont_end_junc,
+                        Line.ContourClass.cont_both_junc,
                     ]:
                         continue
                     dy = trow[num_pnt - 1] - trow[num_pnt - 2]
@@ -688,26 +688,26 @@ class RidgeDetector:
                         if it == -1:
                             if (
                                 contour.get_contour_class()
-                                == LinesUtil.ContourClass.cont_end_junc
+                                == Line.ContourClass.cont_end_junc
                             ):
                                 contour.set_contour_class(
-                                    LinesUtil.ContourClass.cont_both_junc
+                                    Line.ContourClass.cont_both_junc
                                 )
                             else:
                                 contour.set_contour_class(
-                                    LinesUtil.ContourClass.cont_start_junc
+                                    Line.ContourClass.cont_start_junc
                                 )
                         else:
                             if (
                                 contour.get_contour_class()
-                                == LinesUtil.ContourClass.cont_start_junc
+                                == Line.ContourClass.cont_start_junc
                             ):
                                 contour.set_contour_class(
-                                    LinesUtil.ContourClass.cont_both_junc
+                                    Line.ContourClass.cont_both_junc
                                 )
                             else:
                                 contour.set_contour_class(
-                                    LinesUtil.ContourClass.cont_end_junc
+                                    Line.ContourClass.cont_end_junc
                                 )
 
                         if it == -1:
@@ -761,7 +761,7 @@ class RidgeDetector:
 
         indx_max = 0
         while True:
-            cls = LinesUtil.ContourClass.cont_no_junc
+            cls = Line.ContourClass.cont_no_junc
             while indx_max < area and cross[indx_max].done:
                 indx_max += 1
 
@@ -971,23 +971,20 @@ class RidgeDetector:
                                     continue
                                 if j == 0:
                                     # Contour is closed
-                                    cls = LinesUtil.ContourClass.cont_closed
+                                    cls = Line.ContourClass.cont_closed
                                     line_data.reverse()
                                     it = 2
                                 else:
                                     # Determine contour class
                                     if it == 2:
-                                        if (
-                                            cls
-                                            == LinesUtil.ContourClass.cont_start_junc
-                                        ):
-                                            cls = LinesUtil.ContourClass.cont_both_junc
+                                        if cls == Line.ContourClass.cont_start_junc:
+                                            cls = Line.ContourClass.cont_both_junc
                                         else:
-                                            cls = LinesUtil.ContourClass.cont_end_junc
+                                            cls = Line.ContourClass.cont_end_junc
                                         # Index j is correct
                                         pos = j
                                     else:
-                                        cls = LinesUtil.ContourClass.cont_start_junc
+                                        cls = Line.ContourClass.cont_start_junc
                                         # Index num_pnt-1-j is correct since the line will be sorted in reverse
                                         pos = len(line_data) - 1 - j
                                     ridge_data.junctions.append(
@@ -1045,11 +1042,11 @@ class RidgeDetector:
                         if 0 < j < ridge_data.contours[k].num - 1:
                             # Determine contour class
                             if it == 1:
-                                cls = LinesUtil.ContourClass.cont_start_junc
-                            elif cls == LinesUtil.ContourClass.cont_start_junc:
-                                cls = LinesUtil.ContourClass.cont_both_junc
+                                cls = Line.ContourClass.cont_start_junc
+                            elif cls == Line.ContourClass.cont_start_junc:
+                                cls = Line.ContourClass.cont_both_junc
                             else:
-                                cls = LinesUtil.ContourClass.cont_end_junc
+                                cls = Line.ContourClass.cont_end_junc
 
                             # Add the new junction
                             ridge_data.junctions.append(

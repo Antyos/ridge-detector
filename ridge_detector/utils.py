@@ -46,7 +46,7 @@ class LineData:
     def __len__(self):
         return len(self.row)
 
-    def to_line(self, contour_class: Optional["LinesUtil.ContourClass"] = None):
+    def to_line(self, contour_class: Optional["Line.ContourClass"] = None):
         """Convert LineData to Line object."""
         return Line(
             row=self.row,
@@ -123,7 +123,7 @@ class Line:
         width_r: Optional[ArrayLikeFloat] = None,
         asymmetry: Optional[ArrayLikeFloat] = None,
         intensity: Optional[ArrayLikeFloat] = None,
-        contour_class: Optional["LinesUtil.ContourClass"] = None,
+        contour_class: Optional["Line.ContourClass"] = None,
     ):
         self.id = Line.id_counter
         Line.id_counter += 1
@@ -220,6 +220,18 @@ class Line:
     def reset_counter(cls):
         cls.id_counter = 0
 
+    class ContourClass(Enum):
+        cont_no_junc = (1,)
+        """Neither end point is a junction."""
+        cont_start_junc = (2,)
+        """Only the start point of the line is a junction."""
+        cont_end_junc = (3,)
+        """Only the end point of the line is a junction."""
+        cont_both_junc = (4,)
+        """Both end points of the line are junctions."""
+        cont_closed = 5
+        """Contour is closed, i.e., the start and end points are the same."""
+
 
 class Crossref:
     def __init__(self, y=0, x=0, value=0.0, done=False):
@@ -280,22 +292,6 @@ class LinesUtil:
             if col >= width
             else col
         )
-
-    class ContourClass(Enum):
-        # The cont no junc
-        cont_no_junc = (1,)
-        # The cont start junc
-        # no end point is a junction
-        cont_start_junc = (2,)
-        # The cont end junc.
-        # only the start point of the line is a junction
-        cont_end_junc = (3,)
-        # The cont both junc.
-        # only the end point of the line is a junction
-        cont_both_junc = (4,)
-        # The cont closed.
-        # both end points of the line are junctions
-        cont_closed = 5  # the contour is closed
 
 
 class Junction:
@@ -784,17 +780,17 @@ def fix_locations(
         correct_start = (
             cont.contour_class
             in [
-                LinesUtil.ContourClass.cont_no_junc,
-                LinesUtil.ContourClass.cont_end_junc,
-                LinesUtil.ContourClass.cont_closed,
+                Line.ContourClass.cont_no_junc,
+                Line.ContourClass.cont_end_junc,
+                Line.ContourClass.cont_closed,
             ]
         ) and (width_r[0] > 0 and width_l[0] > 0)
         correct_end = (
             cont.contour_class
             in [
-                LinesUtil.ContourClass.cont_no_junc,
-                LinesUtil.ContourClass.cont_start_junc,
-                LinesUtil.ContourClass.cont_closed,
+                Line.ContourClass.cont_no_junc,
+                Line.ContourClass.cont_start_junc,
+                Line.ContourClass.cont_closed,
             ]
         ) and (width_r[-1] > 0 and width_l[-1] > 0)
 

@@ -577,7 +577,7 @@ class RidgeDetector:
         data.contours = contours
         data.junctions = junctions
         if self.estimate_width:
-            data = self.compute_line_width(data, filtered_data)
+            data.contours = self.compute_line_width(data.contours, filtered_data)
         data = self.prune_contours(data)
         self.data = data
         return self.data
@@ -1141,10 +1141,9 @@ class RidgeDetector:
                     contour.angle = (contour.angle + np.pi) % (2 * np.pi)
         return contours, junctions
 
-    def compute_line_width(self, ridge_data: RidgeData, filtered_data: FilteredData):
+    def compute_line_width(self, contours: list[Line], filtered_data: FilteredData):
         """Compute the line width of the contours in the ridge data."""
-        height = ridge_data.height
-        width = ridge_data.width
+        height, width = filtered_data.shape
         length = 2.5 * filtered_data.sigma_map
         max_length = np.ceil(length * 1.2).astype(int)
         grad = np.sqrt(filtered_data.grady**2 + filtered_data.gradx**2)
@@ -1183,7 +1182,7 @@ class RidgeDetector:
             + pp2 * pp2 * grad_dcc
         )
 
-        for contour in ridge_data.contours:
+        for contour in contours:
             num_points = len(contour)
             width_l = np.zeros(num_points, dtype=float)
             width_r = np.zeros(num_points, dtype=float)
@@ -1230,7 +1229,7 @@ class RidgeDetector:
                 filtered_data.sigma_map,
                 self.correct_pos,
             )
-        return ridge_data
+        return contours
 
     def prune_contours(self, ridge_data: RidgeData) -> RidgeData:
         """Prune contours based on their length."""

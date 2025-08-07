@@ -1,4 +1,4 @@
-from itertools import chain, pairwise, product, repeat
+from itertools import chain, pairwise, repeat
 from pathlib import Path
 from typing import Optional, cast
 
@@ -805,13 +805,11 @@ class RidgeDetector:
         contours: list[Line] = []
         junctions: list[Junction] = []
 
-        crossrefs: list[Crossref] = []
-        for r_idx, c_idx in product(range(height), range(width)):
-            if line_points.ismax[r_idx, c_idx] >= 2:
-                crossrefs.append(
-                    Crossref(r_idx, c_idx, line_points.eigval[r_idx, c_idx], False)
-                )
-        area = len(crossrefs)
+        r_idx, c_idx = np.where(line_points.ismax >= 2)
+        crossrefs = [
+            Crossref(int(r), int(c), float(line_points.eigval[r, c]), False)
+            for r, c in zip(r_idx, c_idx)
+        ]
 
         response_2d = line_points.eigval.reshape(height, width)
         resp_dr = convolve(response_2d, kernel_r, mode="mirror")
@@ -823,24 +821,17 @@ class RidgeDetector:
 
         # Sorting cross list in ascending order by value
         crossrefs.sort()
-
         # Updating indx based on the sorted cross list
         for ci, cref in enumerate(crossrefs):
             indx[cref.y, cref.x] = ci + 1
 
-        indx_max = 0
         while True:
             cls = Line.ContourClass.no_junc
-            while indx_max < area and crossrefs[indx_max].done:
-                indx_max += 1
-
-            if indx_max == area:
+            crossref_max = next((cr for cr in crossrefs if not cr.done), None)
+            if crossref_max is None or crossref_max.value == 0.0:
                 break
-
-            max_val = crossrefs[indx_max].value
-            maxy, maxx = crossrefs[indx_max].y, crossrefs[indx_max].x
-            if max_val == 0.0:
-                break
+            maxy = crossref_max.y
+            maxx = crossref_max.x
 
             # Initialize line data
             line_data = LineData()

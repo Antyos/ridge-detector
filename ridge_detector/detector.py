@@ -1,6 +1,8 @@
+import dataclasses
+from dataclasses import dataclass
 from itertools import chain, pairwise, repeat
 from pathlib import Path
-from typing import Optional, cast
+from typing import Optional, TypedDict, Unpack, cast
 
 import cv2
 import imageio.v3 as iio
@@ -473,6 +475,91 @@ class RidgeData:
         return dataframe
 
 
+@dataclass
+class RidgeDetectorConfig:
+    """Configuration for the RidgeDetector.
+
+    Parameters
+    ----------
+    line_widths : ArrayLikeInt, optional
+        The line widths to use for ridge detection. Default is np.arange(1, 3).
+    low_contrast : int, optional
+        The lower contrast threshold for ridge detection. Default is 100.
+    high_contrast : int, optional
+        The upper contrast threshold for ridge detection. Default is 200.
+    min_len : int, default=5
+        Ignore ridges shorter than this length.
+    max_len : int, optional
+        Ignore ridges longer than this length. If 0, no maximum length is applied.
+    dark_line : bool, default=True
+        If True, detect dark lines on a light background. If False, detect light lines
+        on a dark background.
+    estimate_width : bool, default=True
+        If True, estimate the width of the detected lines.
+    extend_line : bool, default=False
+        If True, extend the detected lines based on the gradient direction.
+    correct_pos : bool, default=False
+        If True, correct the position of the detected lines based on the gradient
+        direction. This can help improve the accuracy of the line positions, but may
+        introduce artifacts in some cases. Unused if estimate_width is False.
+    """
+
+    line_widths: ArrayLikeInt = dataclasses.field(
+        default_factory=lambda: np.arange(1, 3)
+    )
+    low_contrast: int = 100
+    high_contrast: int = 200
+    min_len: int = 5
+    max_len: int = 0
+    dark_line: bool = True
+    estimate_width: bool = True
+    extend_line: bool = False
+    correct_pos: bool = False
+
+    def __post_init__(self):
+        if self.min_len < 0 or self.min_len > 255:
+            raise ValueError(
+                f"min_len must be between 0 and 255, but got: {self.min_len}"
+            )
+        if self.max_len < 0 or self.max_len > 255:
+            raise ValueError(
+                f"max_len must be between 0 and 255, but got: {self.max_len}"
+            )
+
+    @property
+    def sigmas(self) -> NDArray:
+        return np.atleast_1d(self.line_widths) / (2 * np.sqrt(3)) + 0.5
+
+    @property
+    def clow(self) -> int:
+        return 255 - self.high_contrast if self.dark_line else self.low_contrast
+
+    @property
+    def chigh(self) -> int:
+        return 255 - self.low_contrast if self.dark_line else self.high_contrast
+
+    @property
+    def mode(self) -> LinesUtil.MODE:
+        return LinesUtil.MODE.dark if self.dark_line else LinesUtil.MODE.light
+
+
+class RidgeDetectorConfigDict(TypedDict, total=False):
+    """Configuration dictionary for RidgeDetector.
+
+    Used for `**kwargs: Unpack[RidgeDetectorConfigDict]`
+    """
+
+    line_widths: ArrayLikeInt
+    low_contrast: int
+    high_contrast: int
+    min_len: int
+    max_len: int
+    dark_line: bool
+    estimate_width: bool
+    extend_line: bool
+    correct_pos: bool
+
+
 class RidgeDetector:
     """Detect ridges in images like the ImageJ Ridge Detection plugin.
 
@@ -502,49 +589,17 @@ class RidgeDetector:
     """
 
     data: Optional[RidgeData] = None
+    config: RidgeDetectorConfig
 
     def __init__(
         self,
-        line_widths: ArrayLikeInt = np.arange(1, 3),
-        low_contrast: int = 100,
-        high_contrast: int = 200,
-        min_len: int = 5,
-        max_len: int = 0,
-        dark_line: bool = True,
-        estimate_width: bool = True,
-        extend_line: bool = False,
-        correct_pos: bool = False,
+        config: Optional[RidgeDetectorConfig] = None,
+        **params: Unpack[RidgeDetectorConfigDict],
     ):
-        if min_len < 0:
-            raise ValueError("min_len must be non-negative")
-        if max_len < 0:
-            raise ValueError("max_len must be non-negative")
-        self.low_contrast = low_contrast
-        self.high_contrast = high_contrast
-        self.min_len = min_len
-        self.max_len = max_len
-        self.dark_line = dark_line
-        self.estimate_width = estimate_width
-        self.extend_line = extend_line
-        self.correct_pos = correct_pos
-
-        # np.isscalar() should cover all the cases we need, but we add the isinstance
-        # check for the type checker.
-        if np.isscalar(line_widths) or isinstance(line_widths, (int, np.integer)):
-            line_widths = np.array([line_widths], dtype=int)
-
-        # Calculate sigmas for multiscale detection
-        self.sigmas = np.array([lw / (2 * np.sqrt(3)) + 0.5 for lw in line_widths])
-
-        self.clow = self.low_contrast
-        self.chigh = self.high_contrast
-        if self.dark_line:
-            self.clow = 255 - self.high_contrast
-            self.chigh = 255 - self.low_contrast
-
+        # Allow manually overriding config parameters
+        self.config = dataclasses.replace(config or RidgeDetectorConfig(), **params)
         # Initialize ridge data container
         self.data = None
-        self.mode = LinesUtil.MODE.dark if self.dark_line else LinesUtil.MODE.light
 
     def detect_lines(self, image: str | Path | NDArray) -> RidgeData:
         """Main method to detect lines in an image.
@@ -570,13 +625,16 @@ class RidgeDetector:
         data = RidgeData(image=image)
 
         filtered_data = FilteredData(
-            grayscale=data.gray, sigmas=self.sigmas, clow=self.clow, chigh=self.chigh
+            grayscale=data.gray,
+            sigmas=self.config.sigmas,
+            clow=self.config.clow,
+            chigh=self.config.chigh,
         )
-        line_points = LinePoints(filtered_data, dark_mode=self.mode)
+        line_points = LinePoints(filtered_data, dark_mode=self.config.mode)
         contours, junctions = self.compute_contours(filtered_data, line_points)
         data.contours = contours
         data.junctions = junctions
-        if self.estimate_width:
+        if self.config.estimate_width:
             data.contours = self.compute_line_width(data.contours, filtered_data)
         data = self.prune_contours(data)
         self.data = data
@@ -591,7 +649,7 @@ class RidgeDetector:
     ) -> tuple[list[Line], list[Junction]]:
         """Extend the lines in the ridge data based on the gradient direction."""
         height, width = label.shape[:2]
-        s = self.mode.value
+        s = self.config.mode.value
         length = 2.5 * filtered_data.sigma_map
         max_line = np.ceil(length * 1.2).astype(int)
         for idx_cont, contour in enumerate(contours):
@@ -1121,7 +1179,7 @@ class RidgeDetector:
                 mask = label[rows, cols] == len(contours) + 1
                 label[rows[mask], cols[mask]] = 0
 
-        if self.extend_line:
+        if self.config.extend_line:
             contours, junctions = self.extend_lines(
                 contours, junctions, label, filtered_data
             )
@@ -1227,20 +1285,20 @@ class RidgeDetector:
                 grad_l,
                 grad_r,
                 filtered_data.sigma_map,
-                self.correct_pos,
+                self.config.correct_pos,
             )
         return contours
 
     def prune_contours(self, ridge_data: RidgeData) -> RidgeData:
         """Prune contours based on their length."""
-        if self.min_len < 0:
+        if self.config.min_len < 0:
             return ridge_data
 
         id_remove = []
         pruned_contours = []
         for i in range(len(ridge_data.contours)):
             cont_len = ridge_data.contours[i].estimate_length()
-            if cont_len < self.min_len or (0 < self.max_len < cont_len):
+            if cont_len < self.config.min_len or (0 < self.config.max_len < cont_len):
                 id_remove.append(ridge_data.contours[i].id)
             else:
                 pruned_contours.append(ridge_data.contours[i])
@@ -1274,7 +1332,7 @@ class RidgeDetector:
             prefix=prefix,
             make_binary=make_binary,
             draw_junc=draw_junc,
-            draw_width=draw_width and self.estimate_width,
+            draw_width=draw_width and self.config.estimate_width,
         )
 
     def show_results(self, figsize=10, show=True):
@@ -1286,7 +1344,9 @@ class RidgeDetector:
         """
         if self.data is None:
             raise ValueError("Ridge data is not initialized.")
-        self.data.plot(figsize=figsize, show_width=self.estimate_width, show=show)
+        self.data.plot(
+            figsize=figsize, show_width=self.config.estimate_width, show=show
+        )
 
 
 if __name__ == "__main__":

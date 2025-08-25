@@ -1,3 +1,4 @@
+import threading
 import tkinter as tk
 from tkinter import filedialog, ttk
 
@@ -146,6 +147,9 @@ class RidgeDetectorGUI(tk.Tk):
         self.img_scale = 1.0
         self.tk_img = None
         self.img_canvas_id = None
+        self._detector_thread = None
+        self._ridge_detector_lock = threading.Lock()
+        self._ridge_detector_pending = False
 
     def open_image(self):
         file_path = filedialog.askopenfilename(
@@ -209,11 +213,27 @@ class RidgeDetectorGUI(tk.Tk):
         try:
             params = self.get_ridge_detector_params()
         except tk.TclError:
+            # Invalid values in parameter input fields
             return
+        with self._ridge_detector_lock:
+            # Queue up at most one more ridge detection
+            if self._detector_thread is not None and self._detector_thread.is_alive():
+                self._ridge_detector_pending = True
+                return
+            self._detector_thread = threading.Thread(
+                target=self.detect_lines, args=(params, self.img), daemon=True
+            )
+            self._detector_thread.start()
+
+    def detect_lines(self, params: RidgeDetectorConfig, img: Image.Image):
         detector = RidgeDetector(params)
-        result = detector.detect_lines(np.array(self.img))
+        result = detector.detect_lines(np.array(img))
         self.ridge_image = Image.fromarray(result.get_image_contours())
         self.display_image()
+        # If detection was pending, re-run it
+        if self._ridge_detector_pending:
+            self._ridge_detector_pending = False
+            self.detect_lines(params, img)
 
     def on_zoom(self, event: tk.Event):
         if self.img is None:
@@ -230,6 +250,9 @@ class RidgeDetectorGUI(tk.Tk):
         self._pan_y_start = event.y
 
     def on_pan_move(self, event: tk.Event):
+        if self.img_canvas_id is None:
+            print("DEBUG: No image canvas ID")
+            return
         dx = event.x - self._pan_x_start
         dy = event.y - self._pan_y_start
         self.img_x += dx

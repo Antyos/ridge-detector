@@ -94,6 +94,7 @@ class RidgeDetectorGUI(tk.Tk):
 
         # Open image
         self.bind_all("<Control-o>", lambda event: self.open_image())
+        self.bind_all("<f>", lambda event: self.zoom_to_fit_image())
 
         # Right: Parameters section (empty for now)
         self.param_frame = ttk.Frame(self.main_frame, width=300)
@@ -222,7 +223,7 @@ class RidgeDetectorGUI(tk.Tk):
         img = Image.open(file_path)
         self.img = img
         self.ridge_image = None
-        self.display_image()
+        self.zoom_to_fit_image()  # Also calls display_image()
 
     def display_image(self):
         # NOTE: Using PIL for scalling is not very performant for large images,
@@ -242,6 +243,17 @@ class RidgeDetectorGUI(tk.Tk):
         self.img_canvas_id = self.canvas.create_image(
             self.img_x, self.img_y, anchor=tk.CENTER, image=self.tk_img
         )
+
+    def zoom_to_fit_image(self):
+        if self.img is None:
+            return
+        self.update()
+        width = self.image_frame.winfo_width()
+        height = self.image_frame.winfo_height()
+        self.img_x = width // 2
+        self.img_y = height // 2
+        self.img_scale = min(width / self.img.width, height / self.img.height)
+        self.display_image()
 
     def on_params_update(self, name: str, index: str, mode: str):
         self.display_ridges()

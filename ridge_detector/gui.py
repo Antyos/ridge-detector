@@ -1,11 +1,68 @@
 import threading
 import tkinter as tk
+from collections.abc import Sequence
 from tkinter import filedialog, ttk
+from typing import TypeGuard
 
 import numpy as np
 from PIL import Image, ImageTk
 
 from ridge_detector.detector import RidgeDetector, RidgeDetectorConfig
+
+
+class InvalidLineWidthError(ValueError): ...
+
+
+def is_int_list(lst: Sequence[int | None]) -> TypeGuard[list[int]]:
+    """Check if all elements in the list are integers."""
+    return all(isinstance(x, int) for x in lst)
+
+
+def parse_line_widths(line_widths: str) -> list[int]:
+    """Convert line widths from string to list of integers."""
+    if not line_widths:
+        raise InvalidLineWidthError("No line widths provided")
+    widths = []
+    for w in line_widths.split(","):
+        # Support slice syntax
+        if ":" in w:
+            segments = [seg.strip() for seg in w.split(":")]
+            if len(segments) > 3:
+                raise InvalidLineWidthError(
+                    f"Too many segments in line width range: {len(segments)}"
+                )
+            try:
+                int_segments = [int(seg) if seg else None for seg in segments]
+            except ValueError:
+                raise InvalidLineWidthError(
+                    f"Non integer in line width range: {segments}"
+                )
+            if int_segments[0] is None:
+                int_segments[0] = 1
+            if not is_int_list(int_segments):
+                raise InvalidLineWidthError(f"Ambiguous line width range: {segments}")
+            if any(seg <= 0 for seg in int_segments):
+                raise InvalidLineWidthError(
+                    f"Cannot use negative or zero values: {segments}"
+                )
+            # Use inclusive stop condition
+            if len(int_segments) > 1:
+                int_segments[1] += 1
+            widths.extend(range(*int_segments))
+        # Single digit
+        elif w.strip().isdigit():
+            try:
+                value = int(w.strip())
+            except ValueError:
+                raise InvalidLineWidthError(f"Invalid line width: {w}")
+            if value <= 0:
+                raise InvalidLineWidthError(
+                    f"Cannot use negative or zero values: {value}"
+                )
+            widths.append(value)
+        else:
+            raise InvalidLineWidthError(f"Invalid line width: {w}")
+    return widths
 
 
 class RidgeDetectorGUI(tk.Tk):
@@ -188,15 +245,13 @@ class RidgeDetectorGUI(tk.Tk):
     def on_params_update(self, name: str, index: str, mode: str):
         self.display_ridges()
 
-    def get_line_width(self):
-        line_width_str = self.line_widths_var.get()
-        if line_width_str:
-            return [int(w) for w in line_width_str.split(",") if w.strip().isdigit()]
-        return []
+    def get_line_widths(self) -> list[int]:
+        line_widths = self.line_widths_var.get()
+        return parse_line_widths(line_widths)
 
     def get_ridge_detector_params(self) -> RidgeDetectorConfig:
         return RidgeDetectorConfig(
-            line_widths=self.get_line_width(),
+            line_widths=self.get_line_widths(),
             low_contrast=self.low_contrast_var.get(),
             high_contrast=self.high_contrast_var.get(),
             min_len=self.min_len_var.get(),
@@ -212,7 +267,7 @@ class RidgeDetectorGUI(tk.Tk):
             return
         try:
             params = self.get_ridge_detector_params()
-        except tk.TclError:
+        except (tk.TclError, InvalidLineWidthError):
             # Invalid values in parameter input fields
             return
         with self._ridge_detector_lock:

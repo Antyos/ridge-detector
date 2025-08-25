@@ -4,8 +4,13 @@ from tkinter import filedialog, ttk
 import numpy as np
 from PIL import Image, ImageTk
 
+from ridge_detector.detector import RidgeDetector, RidgeDetectorConfig
+
 
 class RidgeDetectorGUI(tk.Tk):
+    img: Image.Image | None = None
+    ridge_image: Image.Image | None = None
+
     def __init__(self):
         super().__init__()
         self.title("Ridge Detector GUI")
@@ -44,6 +49,87 @@ class RidgeDetectorGUI(tk.Tk):
         )
         param_label.pack(pady=10)
 
+        # RidgeDetectorConfig parameter fields
+        # line_widths (as comma-separated string)
+        self.line_widths_var = tk.StringVar(value="1,2")
+        self.line_widths_var.trace_add("write", self.on_params_update)
+        ttk.Label(
+            self.param_frame,
+            text="Line Widths (comma-separated)",
+        ).pack(anchor=tk.W, padx=10)
+        ttk.Entry(
+            self.param_frame,
+            textvariable=self.line_widths_var,
+        ).pack(fill=tk.X, padx=10, pady=2)
+
+        # low_contrast
+        self.low_contrast_var = tk.IntVar(value=100)
+        self.low_contrast_var.trace_add("write", self.on_params_update)
+        ttk.Label(self.param_frame, text="Low Contrast").pack(anchor=tk.W, padx=10)
+        ttk.Entry(self.param_frame, textvariable=self.low_contrast_var).pack(
+            fill=tk.X, padx=10, pady=2
+        )
+
+        # high_contrast
+        self.high_contrast_var = tk.IntVar(value=200)
+        self.high_contrast_var.trace_add("write", self.on_params_update)
+        ttk.Label(self.param_frame, text="High Contrast").pack(anchor=tk.W, padx=10)
+        ttk.Entry(self.param_frame, textvariable=self.high_contrast_var).pack(
+            fill=tk.X, padx=10, pady=2
+        )
+
+        # min_len
+        self.min_len_var = tk.IntVar(value=5)
+        self.min_len_var.trace_add("write", self.on_params_update)
+        ttk.Label(self.param_frame, text="Min Length").pack(anchor=tk.W, padx=10)
+        ttk.Entry(self.param_frame, textvariable=self.min_len_var).pack(
+            fill=tk.X, padx=10, pady=2
+        )
+
+        # max_len
+        self.max_len_var = tk.IntVar(value=0)
+        self.max_len_var.trace_add("write", self.on_params_update)
+        ttk.Label(self.param_frame, text="Max Length (0 = no max)").pack(
+            anchor=tk.W, padx=10
+        )
+        ttk.Entry(self.param_frame, textvariable=self.max_len_var).pack(
+            fill=tk.X, padx=10, pady=2
+        )
+
+        # dark_line
+        self.dark_line_var = tk.BooleanVar(value=True)
+        self.dark_line_var.trace_add("write", self.on_params_update)
+        ttk.Checkbutton(
+            self.param_frame, text="Detect Dark Lines", variable=self.dark_line_var
+        ).pack(anchor=tk.W, padx=10, pady=2)
+
+        # estimate_width
+        self.estimate_width_var = tk.BooleanVar(value=True)
+        self.estimate_width_var.trace_add("write", self.on_params_update)
+        ttk.Checkbutton(
+            self.param_frame,
+            text="Estimate Width",
+            variable=self.estimate_width_var,
+        ).pack(anchor=tk.W, padx=10, pady=2)
+
+        # extend_line
+        self.extend_line_var = tk.BooleanVar(value=False)
+        self.extend_line_var.trace_add("write", self.on_params_update)
+        ttk.Checkbutton(
+            self.param_frame, text="Extend Line", variable=self.extend_line_var
+        ).pack(anchor=tk.W, padx=10, pady=2)
+
+        # correct_pos
+        self.correct_pos_var = tk.BooleanVar(value=False)
+        self.correct_pos_var.trace_add("write", self.on_params_update)
+        ttk.Checkbutton(
+            self.param_frame, text="Correct Position", variable=self.correct_pos_var
+        ).pack(anchor=tk.W, padx=10, pady=2)
+
+        ttk.Button(self.param_frame, text="Apply", command=self.display_ridges).pack(
+            anchor=tk.W, padx=10, pady=2
+        )
+
         # Menu
         menubar = tk.Menu(self)
         filemenu = tk.Menu(menubar, tearoff=0)
@@ -54,6 +140,7 @@ class RidgeDetectorGUI(tk.Tk):
         self.config(menu=menubar)
 
         self.img = None
+        self.ridge_image = None
         self.img_x = 0
         self.img_y = 0
         self.img_scale = 1.0
@@ -71,6 +158,7 @@ class RidgeDetectorGUI(tk.Tk):
             return
         img = Image.open(file_path)
         self.img = img
+        self.ridge_image = None
         self.display_image()
 
     def display_image(self):
@@ -78,10 +166,11 @@ class RidgeDetectorGUI(tk.Tk):
         # because pixels outside the viewbox aren't culled.
         if self.img is None:
             return
-        scaled_image = self.img.resize(
+        image = self.ridge_image if self.ridge_image is not None else self.img
+        scaled_image = image.resize(
             (
-                int(self.img.width * self.img_scale),
-                int(self.img.height * self.img_scale),
+                int(image.width * self.img_scale),
+                int(image.height * self.img_scale),
             ),
             Image.Resampling.NEAREST,
         )
@@ -91,6 +180,40 @@ class RidgeDetectorGUI(tk.Tk):
         self.img_canvas_id = self.canvas.create_image(
             self.img_x, self.img_y, anchor=tk.NW, image=self.tk_img
         )
+
+    def on_params_update(self, name: str, index: str, mode: str):
+        self.display_ridges()
+
+    def get_line_width(self):
+        line_width_str = self.line_widths_var.get()
+        if line_width_str:
+            return [int(w) for w in line_width_str.split(",") if w.strip().isdigit()]
+        return []
+
+    def get_ridge_detector_params(self) -> RidgeDetectorConfig:
+        return RidgeDetectorConfig(
+            line_widths=self.get_line_width(),
+            low_contrast=self.low_contrast_var.get(),
+            high_contrast=self.high_contrast_var.get(),
+            min_len=self.min_len_var.get(),
+            max_len=self.max_len_var.get(),
+            dark_line=self.dark_line_var.get(),
+            estimate_width=self.estimate_width_var.get(),
+            extend_line=self.extend_line_var.get(),
+            correct_pos=self.correct_pos_var.get(),
+        )
+
+    def display_ridges(self):
+        if self.img is None:
+            return
+        try:
+            params = self.get_ridge_detector_params()
+        except tk.TclError:
+            return
+        detector = RidgeDetector(params)
+        result = detector.detect_lines(np.array(self.img))
+        self.ridge_image = Image.fromarray(result.get_image_contours())
+        self.display_image()
 
     def on_zoom(self, event: tk.Event):
         if self.img is None:

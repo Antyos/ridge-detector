@@ -283,7 +283,9 @@ class RidgeDetectorGUI(tk.Tk):
     def detect_lines(self, params: RidgeDetectorConfig, img: Image.Image):
         detector = RidgeDetector(params)
         result = detector.detect_lines(np.array(img))
-        self.ridge_image = Image.fromarray(result.get_image_contours())
+        self.ridge_image = Image.fromarray(
+            result.get_image_contours(params.estimate_width)
+        )
         self.display_image()
         # If detection was pending, re-run it
         if self._ridge_detector_pending:

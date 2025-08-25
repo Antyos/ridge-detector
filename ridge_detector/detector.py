@@ -175,9 +175,11 @@ class LinePoints:
         ny = filtered_data.eigvecs[..., 0, 0]
         numerator = (ry * ny) + (rx * nx)
         denominator = (ryy * ny**2) + (2.0 * rxy * nx * ny) + (rxx * nx**2)
+        # Replace 0 with small value to avoid zero-division
+        denominator[denominator == 0] += np.finfo(float).eps
 
         # The minus sign in Eq. (23) is ignored to follow the logic of detecting black ridges in white background
-        t = numerator / (denominator + np.finfo(float).eps)
+        t = numerator / denominator
         py = t * ny
         px = t * nx
 

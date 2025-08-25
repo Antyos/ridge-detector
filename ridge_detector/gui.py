@@ -47,13 +47,16 @@ class RidgeDetectorGUI(tk.Tk):
         # Menu
         menubar = tk.Menu(self)
         filemenu = tk.Menu(menubar, tearoff=0)
-        filemenu.add_command(label="Open Image", command=self.open_image)
+        filemenu.add_command(label="Open Image (Ctrl+O)", command=self.open_image)
         filemenu.add_separator()
         filemenu.add_command(label="Exit", command=self.quit)
         menubar.add_cascade(label="File", menu=filemenu)
         self.config(menu=menubar)
 
         self.img = None
+        self.img_x = 0
+        self.img_y = 0
+        self.img_scale = 1.0
         self.tk_img = None
         self.img_canvas_id = None
 
@@ -71,35 +74,46 @@ class RidgeDetectorGUI(tk.Tk):
         self.display_image()
 
     def display_image(self):
+        # NOTE: Using PIL for scalling is not very performant for large images,
+        # because pixels outside the viewbox aren't culled.
         if self.img is None:
             return
-        self.tk_img = ImageTk.PhotoImage(self.img)
+        scaled_image = self.img.resize(
+            (
+                int(self.img.width * self.img_scale),
+                int(self.img.height * self.img_scale),
+            ),
+            Image.Resampling.NEAREST,
+        )
+        self.tk_img = ImageTk.PhotoImage(scaled_image)
         self.canvas.delete("all")
         # Always draw at (0,0) and use canvas scale/pan for zoom/pan
         self.img_canvas_id = self.canvas.create_image(
-            0, 0, anchor=tk.CENTER, image=self.tk_img
+            self.img_x, self.img_y, anchor=tk.NW, image=self.tk_img
         )
 
-    def on_zoom(self, event):
+    def on_zoom(self, event: tk.Event):
         if self.img is None:
             return
-        # Get mouse position in canvas coordinates
-        x = self.canvas.canvasx(event.x)
-        y = self.canvas.canvasy(event.y)
-        # Determine zoom factor
+        # Determine img scale factor
         if hasattr(event, "delta") and event.delta:
-            factor = 1 + float(np.sign(event.delta) * 0.1)
+            self.img_scale += float(np.sign(event.delta) * 0.1)
         elif hasattr(event, "num"):
-            factor = 1.1 if event.num == 4 else 0.9
-        else:
-            factor = 1.0
-        self.canvas.scale(tk.ALL, x, y, factor, factor)
+            self.img_scale += 0.1 if event.num == 4 else -0.1
+        self.display_image()
 
-    def on_pan_start(self, event):
-        self.canvas.scan_mark(event.x, event.y)
+    def on_pan_start(self, event: tk.Event):
+        self._pan_x_start = event.x
+        self._pan_y_start = event.y
 
-    def on_pan_move(self, event):
-        self.canvas.scan_dragto(event.x, event.y, gain=1)
+    def on_pan_move(self, event: tk.Event):
+        dx = event.x - self._pan_x_start
+        dy = event.y - self._pan_y_start
+        self.img_x += dx
+        self.img_y += dy
+        self.canvas.move(self.img_canvas_id, dx, dy)
+        self._pan_x_start = event.x
+        self._pan_y_start = event.y
 
 
 if __name__ == "__main__":

@@ -199,14 +199,16 @@ class RidgeDetectorGUI(tk.Tk):
 
         self.img = None
         self.ridge_image = None
-        self.img_x = 0
-        self.img_y = 0
         self.img_scale = 1.0
         self.tk_img = None
         self.img_canvas_id = None
         self._detector_thread = None
         self._ridge_detector_lock = threading.Lock()
         self._ridge_detector_pending = False
+        # Need to call update() before getting the image_frame dimensions
+        self.update()
+        self.img_x = self.image_frame.winfo_width() // 2
+        self.img_y = self.image_frame.winfo_height() // 2
 
     def open_image(self):
         file_path = filedialog.askopenfilename(
@@ -237,9 +239,8 @@ class RidgeDetectorGUI(tk.Tk):
         )
         self.tk_img = ImageTk.PhotoImage(scaled_image)
         self.canvas.delete("all")
-        # Always draw at (0,0) and use canvas scale/pan for zoom/pan
         self.img_canvas_id = self.canvas.create_image(
-            self.img_x, self.img_y, anchor=tk.NW, image=self.tk_img
+            self.img_x, self.img_y, anchor=tk.CENTER, image=self.tk_img
         )
 
     def on_params_update(self, name: str, index: str, mode: str):

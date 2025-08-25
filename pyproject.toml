@@ -35,18 +35,20 @@ classifiers = [
 [project.urls]
 Homepage = "https://github.com/lxfhfut/ridge-detector.git"
 
-[tool.hatch.version]
-path = "ridge_detector/__init__.py"
-
-[tool.hatch.build.targets.sdist]
-include = [
-    "/ridge_detector",
+[project.optional-dependencies]
+extras = [
+    "pandas>=2.0.3",
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=8.3.5",
 ]
-extra = [
-    "pandas>=2.0.3",
+
+[tool.hatch.version]
+path = "ridge_detector/__init__.py"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/ridge_detector",
 ]

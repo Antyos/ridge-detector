@@ -2,7 +2,7 @@ import dataclasses
 from dataclasses import dataclass
 from itertools import chain, pairwise, repeat
 from pathlib import Path
-from typing import Optional, TypedDict, Unpack, cast
+from typing import Optional, Sequence, TypedDict, Unpack, cast
 
 import cv2
 import imageio.v3 as iio
@@ -59,6 +59,8 @@ class FilteredData:
         self._shape = grayscale.shape
         height, width = self._shape
         num_scales = len(sigmas)
+        if num_scales == 0:
+            raise ValueError("No sigmas provided")
         saliency = np.zeros((height, width, num_scales), dtype=float)
         orientation = np.zeros((height, width, 2, num_scales), dtype=float)
         rys = np.zeros((height, width, num_scales), dtype=float)
@@ -527,6 +529,15 @@ class RidgeDetectorConfig:
             raise ValueError(
                 f"max_len must be between 0 and 255, but got: {self.max_len}"
             )
+        if isinstance(self.line_widths, Sequence):
+            if len(self.line_widths) == 0:
+                raise ValueError("line_widths must contain at least one value")
+            elif any(w <= 0 for w in self.line_widths):
+                raise ValueError(
+                    "line_widths must contain only positive non-zero values"
+                )
+        elif self.line_widths <= 0:
+            raise ValueError("line_widths must contain only positive non-zero values")
 
     @property
     def sigmas(self) -> NDArray:

@@ -1,13 +1,15 @@
+import json
 import threading
 import tkinter as tk
 from collections.abc import Sequence
-from tkinter import filedialog, ttk
+from pathlib import Path
+from tkinter import filedialog, messagebox, ttk
 from typing import TypeGuard
 
 import numpy as np
 from PIL import Image, ImageTk
 
-from ridge_detector.detector import RidgeDetector, RidgeDetectorConfig
+from ridge_detector.detector import RidgeData, RidgeDetector, RidgeDetectorConfig
 
 
 class InvalidLineWidthError(ValueError): ...
@@ -68,6 +70,8 @@ def parse_line_widths(line_widths: str) -> list[int]:
 class RidgeDetectorGUI(tk.Tk):
     img: Image.Image | None = None
     ridge_image: Image.Image | None = None
+    ridge_data: RidgeData | None = None
+    image_path: Path | None = None
 
     def __init__(self):
         super().__init__()
@@ -92,10 +96,6 @@ class RidgeDetectorGUI(tk.Tk):
         self.canvas.bind("<ButtonPress-1>", self.on_pan_start)
         self.canvas.bind("<B1-Motion>", self.on_pan_move)
 
-        # Open image
-        self.bind_all("<Control-o>", lambda event: self.open_image())
-        self.bind_all("<f>", lambda event: self.zoom_to_fit_image())
-
         # Right: Parameters section (empty for now)
         self.param_frame = ttk.Frame(self.main_frame, width=300)
         self.param_frame.pack(side=tk.RIGHT, fill=tk.Y)
@@ -114,7 +114,7 @@ class RidgeDetectorGUI(tk.Tk):
         self.line_widths_var.trace_add("write", self.on_params_update)
         ttk.Label(
             self.param_frame,
-            text="Line Widths (comma-separated)",
+            text="Line Widths (comma-separated or slice notation)",
         ).pack(anchor=tk.W, padx=10)
         ttk.Entry(
             self.param_frame,
@@ -192,11 +192,32 @@ class RidgeDetectorGUI(tk.Tk):
         # Menu
         menubar = tk.Menu(self)
         filemenu = tk.Menu(menubar, tearoff=0)
-        filemenu.add_command(label="Open Image (Ctrl+O)", command=self.open_image)
+        filemenu.add_command(
+            label="Open Image", command=self.open_image, accelerator="(Ctrl+O)"
+        )
+        filemenu.add_command(
+            label="Save Ridge Image",
+            command=self.save_ridge_image,
+            accelerator="(Ctrl+S)",
+        )
+        filemenu.add_command(label="Export Ridge Data", command=self.export_ridges)
+        filemenu.add_separator()
+        filemenu.add_command(label="Export Parameters", command=self.export_params)
+        filemenu.add_command(label="Import Parameters", command=self.import_params)
         filemenu.add_separator()
         filemenu.add_command(label="Exit", command=self.quit)
         menubar.add_cascade(label="File", menu=filemenu)
+        viewmenu = tk.Menu(menubar, tearoff=0)
+        viewmenu.add_command(
+            label="Zoom to Fit", command=self.zoom_to_fit_image, accelerator="(F)"
+        )
+        menubar.add_cascade(label="View", menu=viewmenu)
         self.config(menu=menubar)
+
+        # Open image
+        self.bind_all("<Control-o>", lambda event: self.open_image())
+        self.bind_all("<Control-s>", lambda event: self.save_ridge_image())
+        self.bind_all("<f>", lambda event: self.zoom_to_fit_image())
 
         self.img = None
         self.ridge_image = None
@@ -221,9 +242,12 @@ class RidgeDetectorGUI(tk.Tk):
         if not file_path:
             return
         img = Image.open(file_path)
+        self.image_path = Path(file_path)
         self.img = img
         self.ridge_image = None
+        self.ridge_data = None
         self.zoom_to_fit_image()  # Also calls display_image()
+        self.display_ridges()
 
     def display_image(self):
         # NOTE: Using PIL for scalling is not very performant for large images,
@@ -295,15 +319,139 @@ class RidgeDetectorGUI(tk.Tk):
 
     def detect_lines(self, params: RidgeDetectorConfig, img: Image.Image):
         detector = RidgeDetector(params)
-        result = detector.detect_lines(np.array(img))
+        self.ridge_data = detector.detect_lines(np.array(img))
         self.ridge_image = Image.fromarray(
-            result.get_image_contours(params.estimate_width)
+            self.ridge_data.get_image_contours(params.estimate_width)
         )
         self.display_image()
         # If detection was pending, re-run it
         if self._ridge_detector_pending:
             self._ridge_detector_pending = False
             self.detect_lines(params, img)
+
+    def save_ridge_image(self):
+        if self.ridge_image is None:
+            messagebox.showinfo("Error", "No ridge image to export.")
+            return
+        if self.image_path:
+            initial_file = f"{self.image_path.stem}.ridges.png"
+        else:
+            initial_file = "ridge_image.png"
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".png",
+            initialfile=initial_file,
+            filetypes=[
+                ("PNG files", "*.png"),
+                ("JPEG files", "*.jpg"),
+                ("TIFF files", "*.tiff"),
+                ("All files", "*.*"),
+            ],
+        )
+        if file_path:
+            self.ridge_image.save(file_path)
+
+    def export_ridges(self):
+        if self.ridge_data is None:
+            messagebox.showinfo("Error", "No ridge data to export.")
+            return
+        if self.image_path:
+            initial_file = f"{self.image_path.name}.ridges.csv"
+        else:
+            initial_file = "ridges.csv"
+        file_path = filedialog.asksaveasfilename(
+            title="Export Ridge Data",
+            defaultextension=".csv",
+            initialfile=initial_file,
+            filetypes=[
+                ("CSV files", "*.csv"),
+                ("Excel files", "*.xlsx"),
+                ("Parquet files", "*.parquet"),
+                ("All files", "*.*"),
+            ],
+        )
+        if not file_path:
+            return
+        file_path = Path(file_path)
+        df = self.ridge_data.to_dataframe()
+        try:
+            if file_path.suffix == ".csv":
+                df.to_csv(file_path, index=False)
+            elif file_path.suffix == ".xlsx":
+                df.to_excel(file_path, index=False)
+            elif file_path.suffix == ".parquet":
+                df.to_parquet(file_path)
+            else:
+                messagebox.showerror("Error", "Unsupported file format.")
+        except (ImportError, ModuleNotFoundError) as e:
+            messagebox.showerror(
+                "Error", f"Failed to find engine to export as {file_path.suffix}: {e}"
+            )
+        except Exception as e:
+            messagebox.showerror("Error", f"An unexpected error occurred: {e}")
+
+    def export_params(self):
+        try:
+            params = {
+                "line_widths": self.line_widths_var.get(),
+                "low_contrast": self.low_contrast_var.get(),
+                "high_contrast": self.high_contrast_var.get(),
+                "min_len": self.min_len_var.get(),
+                "max_len": self.max_len_var.get(),
+                "dark_line": self.dark_line_var.get(),
+                "estimate_width": self.estimate_width_var.get(),
+                "extend_line": self.extend_line_var.get(),
+                "correct_pos": self.correct_pos_var.get(),
+            }
+        except tk.TclError:
+            messagebox.showerror("Error", "Invalid parameters.")
+            return
+        file_path = filedialog.asksaveasfilename(
+            title="Export Parameters",
+            defaultextension=".json",
+            initialfile="parameters.json",
+            filetypes=[
+                ("JSON files", "*.json"),
+                ("All files", "*.*"),
+            ],
+        )
+        if file_path:
+            with open(file_path, "w") as f:
+                json.dump(params, f)
+
+    def import_params(self):
+        file_path = filedialog.askopenfilename(
+            title="Import Parameters",
+            filetypes=[
+                ("JSON files", "*.json"),
+                ("All files", "*.*"),
+            ],
+        )
+        if not file_path:
+            return
+        try:
+            with open(file_path, "r") as f:
+                params = json.load(f)
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load parameters: {e}")
+            return
+        if "line_widths" in params:
+            self.line_widths_var.set(params["line_widths"])
+        if "low_contrast" in params:
+            self.low_contrast_var.set(params["low_contrast"])
+        if "high_contrast" in params:
+            self.high_contrast_var.set(params["high_contrast"])
+        if "min_len" in params:
+            self.min_len_var.set(params["min_len"])
+        if "max_len" in params:
+            self.max_len_var.set(params["max_len"])
+        if "dark_line" in params:
+            self.dark_line_var.set(params["dark_line"])
+        if "estimate_width" in params:
+            self.estimate_width_var.set(params["estimate_width"])
+        if "extend_line" in params:
+            self.extend_line_var.set(params["extend_line"])
+        if "correct_pos" in params:
+            self.correct_pos_var.set(params["correct_pos"])
 
     def on_zoom(self, event: tk.Event):
         if self.img is None:
@@ -321,7 +469,6 @@ class RidgeDetectorGUI(tk.Tk):
 
     def on_pan_move(self, event: tk.Event):
         if self.img_canvas_id is None:
-            print("DEBUG: No image canvas ID")
             return
         dx = event.x - self._pan_x_start
         dy = event.y - self._pan_y_start

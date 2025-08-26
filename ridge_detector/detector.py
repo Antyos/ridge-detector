@@ -529,7 +529,7 @@ class RidgeDetectorConfig:
             raise ValueError(
                 f"max_len must be between 0 and 255, but got: {self.max_len}"
             )
-        if isinstance(self.line_widths, Sequence):
+        if isinstance(self.line_widths, (Sequence, np.ndarray)):
             if len(self.line_widths) == 0:
                 raise ValueError("line_widths must contain at least one value")
             elif any(w <= 0 for w in self.line_widths):

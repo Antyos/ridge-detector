@@ -4,10 +4,11 @@ import tkinter as tk
 from collections.abc import Sequence
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
-from typing import Any, TypeGuard
+from typing import Any, NamedTuple, TypeGuard
 
 import numpy as np
 from PIL import Image, ImageTk
+from tifffile import tifffile
 
 from ridge_detector.detector import RidgeData, RidgeDetector, RidgeDetectorConfig
 
@@ -67,11 +68,17 @@ def parse_line_widths(line_widths: str) -> list[int]:
     return widths
 
 
+class Size(NamedTuple):
+    width: int
+    height: int
+
+
 class RidgeDetectorGUI(tk.Tk):
-    img: Image.Image | None = None
+    img: Image.Image | tifffile.TiffFile | None = None
     ridge_image: Image.Image | None = None
     ridge_data: RidgeData | None = None
     image_path: Path | None = None
+    image_shape: Size | None = None
 
     def __init__(self):
         super().__init__()
@@ -89,8 +96,8 @@ class RidgeDetectorGUI(tk.Tk):
         self.image_frame = ttk.Frame(self.paned_window)
         self.image_frame.pack(side=tk.LEFT, fill=tk.BOTH)
 
-        self.canvas = tk.Canvas(self.image_frame, bg="gray", width=600, height=600)
-        self.canvas.pack(fill=tk.BOTH)
+        self.canvas = tk.Canvas(self.image_frame, bg="gray", width=600)
+        self.canvas.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
         self.paned_window.add(self.image_frame, weight=3)
 
         # For canvas-based zoom and pan
@@ -282,6 +289,7 @@ class RidgeDetectorGUI(tk.Tk):
         self.img_scale = 1.0
         self.tk_img = None
         self.img_canvas_id = None
+        self.image_sliders = None
         self._detector_thread = None
         self._ridge_detector_lock = threading.Lock()
         self._ridge_detector_pending = False
@@ -289,6 +297,9 @@ class RidgeDetectorGUI(tk.Tk):
         self.update()
         self.img_x = self.image_frame.winfo_width() // 2
         self.img_y = self.image_frame.winfo_height() // 2
+
+        # Register close event
+        self.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     def open_image(self):
         file_path = filedialog.askopenfilename(
@@ -299,20 +310,81 @@ class RidgeDetectorGUI(tk.Tk):
         )
         if not file_path:
             return
-        img = Image.open(file_path)
-        self.image_path = Path(file_path)
-        self.img = img
+        file_path = Path(file_path)
+        if file_path.suffix in [".tif", ".tiff"]:
+            self.img = tifffile.TiffFile(file_path)
+            if self.img.is_imagej:
+                img_data = self.img.series[0].levels[0]
+                shape = {
+                    dim: size
+                    for dim, size in zip(img_data.axes, img_data.get_shape())
+                    if dim in ["T", "Z", "C"]
+                }
+                self.populate_image_sliders(shape)
+            self.image_shape = Size(
+                width=self.img.pages.first.sizes["width"],
+                height=self.img.pages.first.sizes["height"],
+            )
+        else:
+            self.img = Image.open(file_path)
+            self.image_shape = Size(
+                width=self.img.width,
+                height=self.img.height,
+            )
+        self.image_path = file_path
         self.ridge_image = None
         self.ridge_data = None
         self.zoom_to_fit_image()  # Also calls display_image()
         self.display_ridges()
+
+    def populate_image_sliders(self, shape: dict[str, int]):
+        if self.img is None:
+            return
+        if self.image_sliders is not None:
+            self.image_sliders.destroy()
+        self.image_sliders = ttk.Frame(self.image_frame)
+        self.image_sliders.pack(side=tk.BOTTOM, fill=tk.X, expand=False)
+        self.image_index = [tk.IntVar(value=0) for _ in range(len(shape))]
+        for int_var, (name, value) in zip(self.image_index, shape.items()):
+            frame = ttk.Frame(self.image_sliders)
+            frame.pack(side=tk.BOTTOM, fill=tk.X, expand=True)
+            ttk.Label(frame, text=f"{name}:").pack(side=tk.LEFT)
+            slider = ttk.Scale(
+                frame,
+                from_=0,
+                to=value - 1,
+                orient=tk.HORIZONTAL,
+                command=lambda val, var=int_var: var.set(int(float(val))),
+            )
+            slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=10)
+            ttk.Spinbox(
+                frame, from_=0, to=value - 1, textvariable=int_var, width=5, increment=1
+            ).pack(side=tk.LEFT)
+            int_var.trace_add(
+                "write", lambda *_: (slider.set(int_var.get()), self.display_ridges())
+            )
+            int_var.set(0)
+
+    def get_hyperstack_image(self):
+        if self.img is None:
+            return None
+        if isinstance(self.img, tifffile.TiffFile):
+            index = tuple(var.get() for var in self.image_index)
+            return self.img.asarray()[index + (...,)]
+        return self.img
 
     def display_image(self):
         # NOTE: Using PIL for scalling is not very performant for large images,
         # because pixels outside the viewbox aren't culled.
         if self.img is None:
             return
-        image = self.ridge_image if self.ridge_image is not None else self.img
+        if self.ridge_image is not None:
+            image = self.ridge_image
+        else:
+            image = self.get_hyperstack_image()
+            assert image is not None
+            if isinstance(image, np.ndarray):
+                image = Image.fromarray(image)
         scaled_image = image.resize(
             (
                 # Prevent scaling the image to size of 0
@@ -328,14 +400,16 @@ class RidgeDetectorGUI(tk.Tk):
         )
 
     def zoom_to_fit_image(self):
-        if self.img is None:
+        if self.img is None or self.image_shape is None:
             return
         self.update()
         width = self.image_frame.winfo_width()
         height = self.image_frame.winfo_height()
         self.img_x = width // 2
         self.img_y = height // 2
-        self.img_scale = min(width / self.img.width, height / self.img.height)
+        self.img_scale = min(
+            width / self.image_shape.width, height / self.image_shape.height
+        )
         self.display_image()
 
     def on_params_update(self, name: str, index: str, mode: str):
@@ -371,14 +445,15 @@ class RidgeDetectorGUI(tk.Tk):
             if self._detector_thread is not None and self._detector_thread.is_alive():
                 self._ridge_detector_pending = True
                 return
+            img = self.get_hyperstack_image()
             self._detector_thread = threading.Thread(
-                target=self.detect_lines, args=(params, self.img), daemon=True
+                target=self.detect_lines, args=(params, img), daemon=True
             )
             self._detector_thread.start()
 
-    def detect_lines(self, params: RidgeDetectorConfig, img: Image.Image):
+    def detect_lines(self, params: RidgeDetectorConfig, img: Image.Image | np.ndarray):
         detector = RidgeDetector(params)
-        self.ridge_data = detector.detect_lines(np.array(img))
+        self.ridge_data = detector.detect_lines(np.asarray(img))
         self.ridge_image = Image.fromarray(
             self.ridge_data.get_image_contours(params.estimate_width)
         )
@@ -579,6 +654,10 @@ class RidgeDetectorGUI(tk.Tk):
         self.canvas.move(self.img_canvas_id, dx, dy)
         self._pan_x_start = event.x
         self._pan_y_start = event.y
+
+    def on_closing(self):
+        if self.img is not None:
+            self.img.close()
 
 
 if __name__ == "__main__":

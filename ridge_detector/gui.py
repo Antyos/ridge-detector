@@ -79,15 +79,19 @@ class RidgeDetectorGUI(tk.Tk):
         self.geometry("900x600")
 
         # Main frame
-        self.main_frame = ttk.Frame(self)
-        self.main_frame.pack(fill=tk.BOTH, expand=True)
+        self.paned_window = ttk.PanedWindow(self, orient=tk.HORIZONTAL)
+        self.paned_window.pack(fill=tk.BOTH, expand=True)
+        # Display the sash. See: https://stackoverflow.com/a/79506039
+        ttk.Style().configure("TPanedwindow", background="dark grey")
+        ttk.Style().configure("Sash", sashthickness=2)
 
         # Left: Image display
-        self.image_frame = ttk.Frame(self.main_frame)
-        self.image_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.image_frame = ttk.Frame(self.paned_window)
+        self.image_frame.pack(side=tk.LEFT, fill=tk.BOTH)
 
         self.canvas = tk.Canvas(self.image_frame, bg="gray", width=600, height=600)
-        self.canvas.pack(fill=tk.BOTH, expand=True)
+        self.canvas.pack(fill=tk.BOTH)
+        self.paned_window.add(self.image_frame, weight=3)
 
         # For canvas-based zoom and pan
         self.canvas.bind("<MouseWheel>", self.on_zoom)  # Windows
@@ -97,16 +101,16 @@ class RidgeDetectorGUI(tk.Tk):
         self.canvas.bind("<B1-Motion>", self.on_pan_move)
 
         # Right: Parameters section (empty for now)
-        self.param_frame = ttk.Frame(self.main_frame, width=300)
-        self.param_frame.pack(side=tk.RIGHT, fill=tk.Y)
-        self.param_frame.pack_propagate(False)
+        self.param_frame = ttk.Frame(self.paned_window, width=300)
+        # self.param_frame.pack(side=tk.RIGHT, fill=tk.Y)
+        self.paned_window.add(self.param_frame, weight=1)
 
         param_label = ttk.Label(
             self.param_frame,
             text="Ridge Detector Parameters",
             font=("Arial", 14, "bold"),
         )
-        param_label.pack(pady=10)
+        param_label.pack(anchor=tk.W, padx=10, pady=10)
 
         # RidgeDetectorConfig parameter fields
         # line_widths (as comma-separated string)

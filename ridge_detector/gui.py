@@ -315,8 +315,9 @@ class RidgeDetectorGUI(tk.Tk):
         image = self.ridge_image if self.ridge_image is not None else self.img
         scaled_image = image.resize(
             (
-                int(image.width * self.img_scale),
-                int(image.height * self.img_scale),
+                # Prevent scaling the image to size of 0
+                max(int(image.width * self.img_scale), 1),
+                max(int(image.height * self.img_scale), 1),
             ),
             Image.Resampling.NEAREST,
         )
@@ -560,6 +561,8 @@ class RidgeDetectorGUI(tk.Tk):
             self.img_scale += float(np.sign(event.delta) * 0.1)
         elif hasattr(event, "num"):
             self.img_scale += 0.1 if event.num == 4 else -0.1
+        # Minimum zoom level is 0.001
+        self.img_scale = max(0.001, self.img_scale)
         self.display_image()
 
     def on_pan_start(self, event: tk.Event):

@@ -4,7 +4,7 @@ import tkinter as tk
 from collections.abc import Sequence
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
-from typing import TypeGuard
+from typing import Any, TypeGuard
 
 import numpy as np
 from PIL import Image, ImageTk
@@ -110,7 +110,18 @@ class RidgeDetectorGUI(tk.Tk):
             text="Ridge Detector Parameters",
             font=("Arial", 14, "bold"),
         )
-        param_label.pack(anchor=tk.W, padx=10, pady=10)
+        param_label.pack(anchor=tk.W, padx=10, pady=2)
+
+        copy_paste_frame = ttk.Frame(self.param_frame)
+        copy_paste_frame.pack(fill=tk.X, padx=10, pady=2)
+        self.copy_button = ttk.Button(
+            copy_paste_frame, text="Copy", command=self.copy_parameters
+        )
+        self.copy_button.pack(side=tk.LEFT)
+        self.paste_button = ttk.Button(
+            copy_paste_frame, text="Paste", command=self.paste_parameters
+        )
+        self.paste_button.pack(side=tk.LEFT)
 
         # RidgeDetectorConfig parameter fields
         # line_widths (as comma-separated string)
@@ -247,9 +258,10 @@ class RidgeDetectorGUI(tk.Tk):
             accelerator="(Ctrl+S)",
         )
         filemenu.add_command(label="Export Ridge Data", command=self.export_ridges)
+        filemenu.add_command(label="Copy Ridge Data", command=self.copy_ridge_data)
         filemenu.add_separator()
-        filemenu.add_command(label="Export Parameters", command=self.export_params)
-        filemenu.add_command(label="Import Parameters", command=self.import_params)
+        filemenu.add_command(label="Export Parameters", command=self.export_parameters)
+        filemenu.add_command(label="Import Parameters", command=self.import_parameters)
         filemenu.add_separator()
         filemenu.add_command(label="Exit", command=self.quit)
         menubar.add_cascade(label="File", menu=filemenu)
@@ -435,9 +447,22 @@ class RidgeDetectorGUI(tk.Tk):
         except Exception as e:
             messagebox.showerror("Error", f"An unexpected error occurred: {e}")
 
-    def export_params(self):
+    def copy_ridge_data(self):
+        if self.ridge_data is None:
+            messagebox.showinfo("Error", "No ridge data to copy.")
+            return
         try:
-            params = {
+            df = self.ridge_data.to_dataframe()
+        except ImportError:
+            messagebox.showerror(
+                "Error", "Must have Pandas installed to copy as a dataframe"
+            )
+            return
+        df.to_clipboard(index=False)
+
+    def dump_parameters(self) -> dict[str, Any] | None:
+        try:
+            return {
                 "line_widths": self.line_widths_var.get(),
                 "low_contrast": self.low_contrast_var.get(),
                 "high_contrast": self.high_contrast_var.get(),
@@ -449,6 +474,11 @@ class RidgeDetectorGUI(tk.Tk):
                 "correct_pos": self.correct_pos_var.get(),
             }
         except tk.TclError:
+            return None
+
+    def export_parameters(self):
+        params = self.dump_parameters()
+        if not params:
             messagebox.showerror("Error", "Invalid parameters.")
             return
         file_path = filedialog.asksaveasfilename(
@@ -464,7 +494,20 @@ class RidgeDetectorGUI(tk.Tk):
             with open(file_path, "w") as f:
                 json.dump(params, f)
 
-    def import_params(self):
+    def copy_parameters(self):
+        params = self.dump_parameters()
+        if not params:
+            messagebox.showerror("Error", "Invalid parameters.")
+            return
+        try:
+            self.clipboard_clear()
+            self.clipboard_append(json.dumps(params))
+            self.copy_button.config(text="Copied!")
+            self.after(2000, lambda: self.copy_button.config(text="Copy"))
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to copy parameters: {e}")
+
+    def import_parameters(self):
         file_path = filedialog.askopenfilename(
             title="Import Parameters",
             filetypes=[
@@ -480,6 +523,9 @@ class RidgeDetectorGUI(tk.Tk):
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load parameters: {e}")
             return
+        self.load_parameters(params)
+
+    def load_parameters(self, params: dict[str, Any]):
         if "line_widths" in params:
             self.line_widths_var.set(params["line_widths"])
         if "low_contrast" in params:
@@ -498,6 +544,13 @@ class RidgeDetectorGUI(tk.Tk):
             self.extend_line_var.set(params["extend_line"])
         if "correct_pos" in params:
             self.correct_pos_var.set(params["correct_pos"])
+
+    def paste_parameters(self):
+        try:
+            params = json.loads(self.clipboard_get())
+            self.load_parameters(params)
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load parameters: {e}")
 
     def on_zoom(self, event: tk.Event):
         if self.img is None:

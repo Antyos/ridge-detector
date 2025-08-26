@@ -292,7 +292,7 @@ class RidgeDetectorGUI(tk.Tk):
         self.image_sliders = None
         self._detector_thread = None
         self._ridge_detector_lock = threading.Lock()
-        self._ridge_detector_pending = False
+        self._ridge_detector_pending = None
         # Need to call update() before getting the image_frame dimensions
         self.update()
         self.img_x = self.image_frame.winfo_width() // 2
@@ -361,9 +361,18 @@ class RidgeDetectorGUI(tk.Tk):
                 frame, from_=0, to=value - 1, textvariable=int_var, width=5, increment=1
             ).pack(side=tk.LEFT)
             int_var.trace_add(
-                "write", lambda *_: (slider.set(int_var.get()), self.display_ridges())
+                "write",
+                lambda *_: (
+                    slider.set(int_var.get()),
+                    self.clear_ridge_image(),
+                    self.display_image(),
+                    self.display_ridges(),
+                ),
             )
             int_var.set(0)
+
+    def clear_ridge_image(self):
+        self.ridge_image = None
 
     def get_hyperstack_image(self):
         if self.img is None:
@@ -443,25 +452,28 @@ class RidgeDetectorGUI(tk.Tk):
         with self._ridge_detector_lock:
             # Queue up at most one more ridge detection
             if self._detector_thread is not None and self._detector_thread.is_alive():
-                self._ridge_detector_pending = True
+                self._ridge_detector_pending = self.img
                 return
-            img = self.get_hyperstack_image()
             self._detector_thread = threading.Thread(
-                target=self.detect_lines, args=(params, img), daemon=True
+                target=self.detect_lines, args=(params, self.img), daemon=True
             )
             self._detector_thread.start()
 
-    def detect_lines(self, params: RidgeDetectorConfig, img: Image.Image | np.ndarray):
+    def detect_lines(
+        self, params: RidgeDetectorConfig, img: Image.Image | tifffile.TiffFile
+    ):
         detector = RidgeDetector(params)
-        self.ridge_data = detector.detect_lines(np.asarray(img))
+        img_arr = np.asarray(self.get_hyperstack_image())
+        self.ridge_data = detector.detect_lines(img_arr)
         self.ridge_image = Image.fromarray(
             self.ridge_data.get_image_contours(params.estimate_width)
         )
         self.display_image()
         # If detection was pending, re-run it
         if self._ridge_detector_pending:
-            self._ridge_detector_pending = False
-            self.detect_lines(params, img)
+            next_img = self._ridge_detector_pending
+            self._ridge_detector_pending = None
+            self.detect_lines(params, next_img)
 
     def save_ridge_image(self):
         if self.ridge_image is None:
@@ -633,9 +645,9 @@ class RidgeDetectorGUI(tk.Tk):
             return
         # Determine img scale factor
         if hasattr(event, "delta") and event.delta:
-            self.img_scale += float(np.sign(event.delta) * 0.1)
+            self.img_scale *= 1.25 if event.delta > 0 else 0.8
         elif hasattr(event, "num"):
-            self.img_scale += 0.1 if event.num == 4 else -0.1
+            self.img_scale *= 1.25 if event.num == 4 else 0.8
         # Minimum zoom level is 0.001
         self.img_scale = max(0.001, self.img_scale)
         self.display_image()

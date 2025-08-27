@@ -185,8 +185,8 @@ class RidgeDetectorGUI(tk.Tk):
         self.canvas.bind("<Button-5>", self.on_zoom)  # Linux scroll down
         self.canvas.bind("<ButtonPress-1>", self.on_pan_start)
         self.canvas.bind("<B1-Motion>", self.on_pan_move)
-        self.canvas.bind("<ButtonPress-3>", self.on_pan_start)
-        self.canvas.bind("<B3-Motion>", self.on_pan_move)
+        self.canvas.bind("<ButtonPress-2>", self.on_pan_start)  # Middle mouse
+        self.canvas.bind("<B2-Motion>", self.on_pan_move)
 
         # Right: Parameters section (empty for now)
         self.param_frame = ttk.Frame(self.paned_window, width=300)

@@ -90,6 +90,10 @@ class RidgeDetectorGUI(tk.Tk):
         # Main frame
         self.paned_window = ttk.PanedWindow(self, orient=tk.HORIZONTAL)
         self.paned_window.pack(fill=tk.BOTH, expand=True)
+        status_bar_frame = ttk.Frame(self)
+        status_bar_frame.pack(side=tk.BOTTOM, fill=tk.X)
+        self.status_bar = ttk.Label(status_bar_frame, text="Status: Ready")
+        self.status_bar.pack(side=tk.LEFT, padx=5)
         # Display the sash. See: https://stackoverflow.com/a/79506039
         ttk.Style().configure("TPanedwindow", background="dark grey")
         ttk.Style().configure("Sash", sashthickness=2)
@@ -108,6 +112,8 @@ class RidgeDetectorGUI(tk.Tk):
         self.canvas.bind("<Button-5>", self.on_zoom)  # Linux scroll down
         self.canvas.bind("<ButtonPress-1>", self.on_pan_start)
         self.canvas.bind("<B1-Motion>", self.on_pan_move)
+        self.canvas.bind("<ButtonPress-3>", self.on_pan_start)
+        self.canvas.bind("<B3-Motion>", self.on_pan_move)
 
         # Right: Parameters section (empty for now)
         self.param_frame = ttk.Frame(self.paned_window, width=300)
@@ -314,6 +320,9 @@ class RidgeDetectorGUI(tk.Tk):
         # Register close event
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
 
+    def set_status(self, message: str):
+        self.status_bar.config(text=message)
+
     def open_image(self):
         file_path = filedialog.askopenfilename(
             filetypes=[
@@ -324,6 +333,7 @@ class RidgeDetectorGUI(tk.Tk):
         if not file_path:
             return
         file_path = Path(file_path)
+        self.set_status(f"Opening: '{file_path}'")
         if file_path.suffix in [".tif", ".tiff"]:
             self.image_handle = tifffile.TiffFile(file_path)
             if self.image_handle.is_imagej:
@@ -348,12 +358,11 @@ class RidgeDetectorGUI(tk.Tk):
         self.ridge_data = None
         self.zoom_to_fit_image()  # Also calls display_image()
         self.update_ridges()
+        self.set_status("Status: Ready")
 
     def populate_image_sliders(
         self, shape: dict[str, int], names: dict[str, str] | None = None
     ):
-        if self.image_handle is None:
-            return
         if self.image_sliders is not None:
             self.image_sliders.destroy()
         self.image_sliders = ttk.Frame(self.image_frame)
@@ -503,6 +512,7 @@ class RidgeDetectorGUI(tk.Tk):
     def _detect_lines(self, params: RidgeDetectorConfig, img: Image.Image | NDArray):
         detector = RidgeDetector(params)
         img_arr = np.asarray(img)
+        self.set_status("Detecting ridges...")
         self.ridge_data = detector.detect_lines(img_arr)
         self.ridge_image = Image.fromarray(
             self.ridge_data.get_image_contours(params.estimate_width)
@@ -513,6 +523,7 @@ class RidgeDetectorGUI(tk.Tk):
             next_params, next_img = self._ridge_detector_pending
             self._ridge_detector_pending = None
             self._detect_lines(next_params, next_img)
+        self.set_status("Ready!")
 
     def save_ridge_image(self):
         if self.ridge_image is None:
@@ -534,6 +545,7 @@ class RidgeDetectorGUI(tk.Tk):
         )
         if file_path:
             self.ridge_image.save(file_path)
+            self.set_status(f"Saved ridge image to '{file_path}'")
 
     def export_ridges(self):
         if self.ridge_data is None:
@@ -567,6 +579,8 @@ class RidgeDetectorGUI(tk.Tk):
                 df.to_parquet(file_path)
             else:
                 messagebox.showerror("Error", "Unsupported file format.")
+                return
+            self.set_status(f"Exported ridge data to '{file_path}'")
         except (ImportError, ModuleNotFoundError) as e:
             messagebox.showerror(
                 "Error", f"Failed to find engine to export as {file_path.suffix}: {e}"
@@ -586,6 +600,7 @@ class RidgeDetectorGUI(tk.Tk):
             )
             return
         df.to_clipboard(index=False)
+        self.set_status("Copied ridge data to clipboard")
 
     def dump_parameters(self) -> dict[str, Any] | None:
         try:
@@ -620,6 +635,7 @@ class RidgeDetectorGUI(tk.Tk):
         if file_path:
             with open(file_path, "w") as f:
                 json.dump(params, f)
+            self.set_status(f"Exported parameters to '{file_path}'")
 
     def copy_parameters(self):
         params = self.dump_parameters()
@@ -651,6 +667,7 @@ class RidgeDetectorGUI(tk.Tk):
             messagebox.showerror("Error", f"Failed to load parameters: {e}")
             return
         self.load_parameters(params)
+        self.set_status("Imported parameters successfully.")
 
     def load_parameters(self, params: dict[str, Any]):
         if "line_widths" in params:

@@ -645,11 +645,18 @@ class RidgeDetectorGUI(tk.Tk):
             return
         # Determine img scale factor
         if hasattr(event, "delta") and event.delta:
-            self.img_scale *= 1.25 if event.delta > 0 else 0.8
+            delta = 1.25 if event.delta > 0 else 0.8
         elif hasattr(event, "num"):
-            self.img_scale *= 1.25 if event.num == 4 else 0.8
+            delta = 1.25 if event.num == 4 else 0.8
+        else:
+            delta = 1
         # Minimum zoom level is 0.001
-        self.img_scale = max(0.001, self.img_scale)
+        self.img_scale = max(0.001, self.img_scale * delta)
+        # Update offset so that we are scaling based on the center of the screen
+        half_width = self.image_frame.winfo_width() // 2
+        half_height = self.image_frame.winfo_height() // 2
+        self.img_x = (self.img_x - half_width) * delta + half_width
+        self.img_y = (self.img_y - half_height) * delta + half_height
         self.display_image()
 
     def on_pan_start(self, event: tk.Event):

@@ -670,6 +670,7 @@ class RidgeDetectorGUI(tk.Tk):
     def on_closing(self):
         if self.img is not None:
             self.img.close()
+        self.destroy()
 
 
 if __name__ == "__main__":

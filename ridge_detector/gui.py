@@ -74,13 +74,86 @@ class Size(NamedTuple):
     height: int
 
 
+class ImageData:
+    path: Path
+    handle: Image.Image | tifffile.TiffFile
+    _image: Image.Image | NDArray
+    width: int
+    height: int
+    dim_names: dict[str, str] = {}
+    stack_shape: dict[str, int] = {}
+
+    def __init__(self, file_path: Path):
+        self.path = file_path
+        if file_path.suffix in [".tif", ".tiff"]:
+            self.handle = tifffile.TiffFile(file_path)
+            self._image = self.handle.pages.first.asarray()
+            if self.handle.is_imagej:
+                img_data = self.handle.series[0].levels[0]
+                self.dim_names = dict(zip(img_data.dims, img_data.axes))
+                self.stack_shape = {
+                    dim: size
+                    for dim, size in img_data.sizes.items()
+                    if dim not in {"width", "height", "sample"}
+                }
+                self.width = img_data.sizes["width"]
+                self.height = img_data.sizes["height"]
+            else:
+                self.width = self.handle.pages.first.sizes["width"]
+                self.height = self.handle.pages.first.sizes["height"]
+        else:
+            self.handle = Image.open(file_path)
+            self._image = self.handle
+            self.width = self.handle.width
+            self.height = self.handle.height
+
+    @property
+    def is_stack(self):
+        return len(self.stack_shape) > 0
+
+    def _get_frame(self, **index: int):
+        if isinstance(self.handle, tifffile.TiffFile):
+            if self.handle.is_imagej:
+                image_shape = self.handle.series[0].levels[0].sizes
+                _num_z = image_shape.get("depth", 1)
+                _num_c = image_shape.get("channel", 1)
+
+                flat_index = (
+                    (index.get("time", 0) * _num_z * _num_c)
+                    + (index.get("depth", 0) * _num_c)
+                    + index.get("channel", 0)
+                )
+                return self.handle.asarray(key=flat_index)
+            return self.handle.pages.first.asarray()
+        return self.handle
+
+    def set_frame(self, **index: int):
+        self._image = self._get_frame(**index)
+
+    @property
+    def image(self):
+        return self._image
+
+    @property
+    def pil_image(self) -> Image.Image:
+        if isinstance(self._image, np.ndarray):
+            return Image.fromarray(self._image)
+        return self._image
+
+    @property
+    def arr_image(self):
+        if isinstance(self._image, np.ndarray):
+            return self._image
+        return np.array(self._image)
+
+
 class RidgeDetectorGUI(tk.Tk):
-    image_handle: Image.Image | tifffile.TiffFile | None = None
-    image_data: Image.Image | NDArray | None = None
+    image_handle: str = "a"
+    image_data: str = "a"
+    image_shape: str = "a"
     ridge_image: Image.Image | None = None
     ridge_data: RidgeData | None = None
-    image_path: Path | None = None
-    image_shape: dict[str, int] | None = None
+    image_path: int
 
     def __init__(self):
         super().__init__()
@@ -292,7 +365,7 @@ class RidgeDetectorGUI(tk.Tk):
         menubar.add_cascade(label="File", menu=filemenu)
         viewmenu = tk.Menu(menubar, tearoff=0)
         viewmenu.add_command(
-            label="Zoom to Fit", command=self.zoom_to_fit_image, accelerator="(F)"
+            label="Zoom to Fit", command=self.zoom_to_fit, accelerator="(F)"
         )
         menubar.add_cascade(label="View", menu=viewmenu)
         self.config(menu=menubar)
@@ -300,12 +373,10 @@ class RidgeDetectorGUI(tk.Tk):
         # Open image
         self.bind_all("<Control-o>", lambda event: self.open_image())
         self.bind_all("<Control-s>", lambda event: self.save_ridge_image())
-        self.bind_all("<f>", lambda event: self.zoom_to_fit_image())
+        self.bind_all("<f>", lambda event: self.zoom_to_fit())
 
-        self.image_handle = None
-        self.image_data = None
+        self.image = None
         self.ridge_image = None
-        self.img_scale = 1.0
         self.tk_img = None
         self.img_canvas_id = None
         self.image_sliders = None
@@ -316,6 +387,7 @@ class RidgeDetectorGUI(tk.Tk):
         self.update()
         self.img_x = self.image_frame.winfo_width() // 2
         self.img_y = self.image_frame.winfo_height() // 2
+        self.img_scale = 1.0
 
         # Register close event
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
@@ -334,29 +406,11 @@ class RidgeDetectorGUI(tk.Tk):
             return
         file_path = Path(file_path)
         self.set_status(f"Opening: '{file_path}'")
-        if file_path.suffix in [".tif", ".tiff"]:
-            self.image_handle = tifffile.TiffFile(file_path)
-            if self.image_handle.is_imagej:
-                img_data = self.image_handle.series[0].levels[0]
-                names = dict(zip(img_data.dims, img_data.axes))
-                self.image_shape = img_data.sizes
-                assert "width" in self.image_shape and "height" in self.image_shape
-                self.populate_image_sliders(self.image_shape, names)
-            else:
-                self.image_shape = dict(
-                    width=self.image_handle.pages.first.sizes["width"],
-                    height=self.image_handle.pages.first.sizes["height"],
-                )
-        else:
-            self.image_handle = Image.open(file_path)
-            self.image_shape = dict(
-                width=self.image_handle.width,
-                height=self.image_handle.height,
-            )
-        self.image_path = file_path
+        self.image = ImageData(file_path)
+        self.populate_image_sliders(self.image.stack_shape, self.image.dim_names)
         self.ridge_image = None
         self.ridge_data = None
-        self.zoom_to_fit_image()  # Also calls display_image()
+        self.zoom_to_fit()  # Also calls display_image()
         self.update_ridges()
         self.set_status("Status: Ready")
 
@@ -365,13 +419,13 @@ class RidgeDetectorGUI(tk.Tk):
     ):
         if self.image_sliders is not None:
             self.image_sliders.destroy()
+        if not shape:
+            self.image_sliders = None
+            return
         self.image_sliders = ttk.Frame(self.image_frame)
         self.image_sliders.pack(side=tk.BOTTOM, fill=tk.X, expand=False)
         self.image_index = {k: tk.IntVar(value=0) for k in shape.keys()}
         for axis, value in shape.items():
-            # Skip axes relating to pixel data
-            if axis in ["width", "height", "sample"]:
-                continue
             int_var = self.image_index[axis]
             frame = ttk.Frame(self.image_sliders)
             frame.pack(side=tk.BOTTOM, fill=tk.X, expand=True)
@@ -401,45 +455,23 @@ class RidgeDetectorGUI(tk.Tk):
             int_var.set(0)
 
     def on_slider_update(self):
+        if self.image is None:
+            return
         self.ridge_image = None
-        self.image_data = self.get_hyperstack_image()
+        index = {ax: var.get() for ax, var in self.image_index.items()}
+        self.image.set_frame(**index)
         self.display_image()
         self.update_ridges()
-
-    def get_hyperstack_image(self) -> Image.Image | NDArray | None:
-        if self.image_handle is None:
-            return None
-        if isinstance(self.image_handle, tifffile.TiffFile):
-            if self.image_handle.is_imagej:
-                image_shape = self.image_handle.series[0].levels[0].sizes
-                _num_z = image_shape.get("depth", 1)
-                _num_c = image_shape.get("channel", 1)
-                index = {
-                    ax: var.get()
-                    for ax, var in self.image_index.items()
-                    if ax not in ["width", "height"]
-                }
-                flat_index = (
-                    (index.get("time", 0) * _num_z * _num_c)
-                    + (index.get("depth", 0) * _num_c)
-                    + index.get("channel", 0)
-                )
-                return self.image_handle.asarray(key=flat_index)
-            return self.image_handle.pages.first.asarray()
-        return self.image_handle
 
     def display_image(self):
         # NOTE: Using PIL for scalling is not very performant for large images,
         # because pixels outside the viewbox aren't culled.
-        if self.image_handle is None:
+        if self.image is None:
             return
         if self.ridge_image is not None:
             image = self.ridge_image
         else:
-            image = self.image_data
-            assert image is not None
-            if isinstance(image, np.ndarray):
-                image = Image.fromarray(image)
+            image = self.image.pil_image
         scaled_image = image.resize(
             (
                 # Prevent scaling the image to size of 0
@@ -454,17 +486,15 @@ class RidgeDetectorGUI(tk.Tk):
             self.img_x, self.img_y, anchor=tk.CENTER, image=self.tk_img
         )
 
-    def zoom_to_fit_image(self):
-        if self.image_handle is None or self.image_shape is None:
+    def zoom_to_fit(self):
+        if self.image is None:
             return
         self.update()
         width = self.image_frame.winfo_width()
         height = self.image_frame.winfo_height()
         self.img_x = width // 2
         self.img_y = height // 2
-        self.img_scale = min(
-            width / self.image_shape["width"], height / self.image_shape["height"]
-        )
+        self.img_scale = min(width / self.image.width, height / self.image.height)
         self.display_image()
 
     def on_params_update(self, name: str, index: str, mode: str):
@@ -488,11 +518,7 @@ class RidgeDetectorGUI(tk.Tk):
         )
 
     def update_ridges(self):
-        if (
-            self.image_handle is None
-            or self.image_data is None
-            or not self.auto_calculate_ridges.get()
-        ):
+        if self.image is None or not self.auto_calculate_ridges.get():
             return
         try:
             params = self.get_ridge_detector_params()
@@ -502,16 +528,17 @@ class RidgeDetectorGUI(tk.Tk):
         with self._ridge_detector_lock:
             # Queue up at most one more ridge detection
             if self._detector_thread is not None and self._detector_thread.is_alive():
-                self._ridge_detector_pending = params, self.image_data
+                self._ridge_detector_pending = (params, self.image.arr_image)
                 return
             self._detector_thread = threading.Thread(
-                target=self._detect_lines, args=(params, self.image_data), daemon=True
+                target=self._detect_lines,
+                args=(params, self.image.arr_image),
+                daemon=True,
             )
             self._detector_thread.start()
 
-    def _detect_lines(self, params: RidgeDetectorConfig, img: Image.Image | NDArray):
+    def _detect_lines(self, params: RidgeDetectorConfig, img_arr: NDArray):
         detector = RidgeDetector(params)
-        img_arr = np.asarray(img)
         self.set_status("Detecting ridges...")
         self.ridge_data = detector.detect_lines(img_arr)
         self.ridge_image = Image.fromarray(
@@ -529,8 +556,8 @@ class RidgeDetectorGUI(tk.Tk):
         if self.ridge_image is None:
             messagebox.showinfo("Error", "No ridge image to export.")
             return
-        if self.image_path:
-            initial_file = f"{self.image_path.stem}.ridges.png"
+        if self.image:
+            initial_file = f"{self.image.path.stem}.ridges.png"
         else:
             initial_file = "ridge_image.png"
         file_path = filedialog.asksaveasfilename(
@@ -551,8 +578,8 @@ class RidgeDetectorGUI(tk.Tk):
         if self.ridge_data is None:
             messagebox.showinfo("Error", "No ridge data to export.")
             return
-        if self.image_path:
-            initial_file = f"{self.image_path.name}.ridges.csv"
+        if self.image:
+            initial_file = f"{self.image.path.name}.ridges.csv"
         else:
             initial_file = "ridges.csv"
         file_path = filedialog.asksaveasfilename(
@@ -731,8 +758,8 @@ class RidgeDetectorGUI(tk.Tk):
         self._pan_y_start = event.y
 
     def on_closing(self):
-        if self.image_handle is not None:
-            self.image_handle.close()
+        if self.image is not None:
+            self.image.handle.close()
         self.destroy()
 
 

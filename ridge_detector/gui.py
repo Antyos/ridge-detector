@@ -7,6 +7,7 @@ from tkinter import filedialog, messagebox, ttk
 from typing import Any, NamedTuple, TypeGuard
 
 import numpy as np
+from numpy.typing import NDArray
 from PIL import Image, ImageTk
 from tifffile import tifffile
 
@@ -78,7 +79,7 @@ class RidgeDetectorGUI(tk.Tk):
     ridge_image: Image.Image | None = None
     ridge_data: RidgeData | None = None
     image_path: Path | None = None
-    image_shape: Size | None = None
+    image_shape: dict[str, int] | None = None
 
     def __init__(self):
         super().__init__()
@@ -325,19 +326,18 @@ class RidgeDetectorGUI(tk.Tk):
             self.img = tifffile.TiffFile(file_path)
             if self.img.is_imagej:
                 img_data = self.img.series[0].levels[0]
-                shape = {
-                    dim: size
-                    for dim, size in zip(img_data.axes, img_data.get_shape())
-                    if dim in ["T", "Z", "C"]
-                }
-                self.populate_image_sliders(shape)
-            self.image_shape = Size(
-                width=self.img.pages.first.sizes["width"],
-                height=self.img.pages.first.sizes["height"],
-            )
+                names = dict(zip(img_data.dims, img_data.axes))
+                self.image_shape = img_data.sizes
+                assert "width" in self.image_shape and "height" in self.image_shape
+                self.populate_image_sliders(self.image_shape, names)
+            else:
+                self.image_shape = dict(
+                    width=self.img.pages.first.sizes["width"],
+                    height=self.img.pages.first.sizes["height"],
+                )
         else:
             self.img = Image.open(file_path)
-            self.image_shape = Size(
+            self.image_shape = dict(
                 width=self.img.width,
                 height=self.img.height,
             )
@@ -347,17 +347,27 @@ class RidgeDetectorGUI(tk.Tk):
         self.zoom_to_fit_image()  # Also calls display_image()
         self.update_ridges()
 
-    def populate_image_sliders(self, shape: dict[str, int]):
+    def populate_image_sliders(
+        self, shape: dict[str, int], names: dict[str, str] | None = None
+    ):
         if self.img is None:
             return
         if self.image_sliders is not None:
             self.image_sliders.destroy()
         self.image_sliders = ttk.Frame(self.image_frame)
         self.image_sliders.pack(side=tk.BOTTOM, fill=tk.X, expand=False)
-        self.image_index = [tk.IntVar(value=0) for _ in range(len(shape))]
-        for int_var, (name, value) in zip(self.image_index, shape.items()):
+        self.image_index = {k: tk.IntVar(value=0) for k in shape.keys()}
+        for axis, value in shape.items():
+            # Skip axes relating to pixel data
+            if axis in ["width", "height", "sample"]:
+                continue
+            int_var = self.image_index[axis]
             frame = ttk.Frame(self.image_sliders)
             frame.pack(side=tk.BOTTOM, fill=tk.X, expand=True)
+            if names is not None and axis in names:
+                name = names[axis]
+            else:
+                name = axis
             ttk.Label(frame, text=f"{name}:").pack(side=tk.LEFT)
             slider = ttk.Scale(
                 frame,
@@ -384,12 +394,26 @@ class RidgeDetectorGUI(tk.Tk):
     def clear_ridge_image(self):
         self.ridge_image = None
 
-    def get_hyperstack_image(self):
+    def get_hyperstack_image(self) -> Image.Image | NDArray | None:
         if self.img is None:
             return None
         if isinstance(self.img, tifffile.TiffFile):
-            index = tuple(var.get() for var in self.image_index)
-            return self.img.asarray()[index + (...,)]
+            if self.img.is_imagej:
+                image_shape = self.img.series[0].levels[0].sizes
+                _num_z = image_shape.get("depth", 1)
+                _num_c = image_shape.get("channel", 1)
+                index = {
+                    ax: var.get()
+                    for ax, var in self.image_index.items()
+                    if ax not in ["width", "height"]
+                }
+                flat_index = (
+                    (index.get("time", 0) * _num_z * _num_c)
+                    + (index.get("depth", 0) * _num_c)
+                    + index.get("channel", 0)
+                )
+                return self.img.asarray(key=flat_index)
+            return self.img.pages.first.asarray()
         return self.img
 
     def display_image(self):
@@ -427,7 +451,7 @@ class RidgeDetectorGUI(tk.Tk):
         self.img_x = width // 2
         self.img_y = height // 2
         self.img_scale = min(
-            width / self.image_shape.width, height / self.image_shape.height
+            width / self.image_shape["width"], height / self.image_shape["height"]
         )
         self.display_image()
 

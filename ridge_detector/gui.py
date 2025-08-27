@@ -148,12 +148,10 @@ class ImageData:
 
 
 class RidgeDetectorGUI(tk.Tk):
-    image_handle: str = "a"
-    image_data: str = "a"
-    image_shape: str = "a"
     ridge_image: Image.Image | None = None
     ridge_data: RidgeData | None = None
     image_path: int
+    _skip_ridge_display: bool = False
 
     def __init__(self):
         super().__init__()
@@ -163,10 +161,6 @@ class RidgeDetectorGUI(tk.Tk):
         # Main frame
         self.paned_window = ttk.PanedWindow(self, orient=tk.HORIZONTAL)
         self.paned_window.pack(fill=tk.BOTH, expand=True)
-        status_bar_frame = ttk.Frame(self)
-        status_bar_frame.pack(side=tk.BOTTOM, fill=tk.X)
-        self.status_bar = ttk.Label(status_bar_frame, text="Status: Ready")
-        self.status_bar.pack(side=tk.LEFT, padx=5)
         # Display the sash. See: https://stackoverflow.com/a/79506039
         ttk.Style().configure("TPanedwindow", background="dark grey")
         ttk.Style().configure("Sash", sashthickness=2)
@@ -344,6 +338,12 @@ class RidgeDetectorGUI(tk.Tk):
             variable=self.auto_calculate_ridges,
         ).pack(anchor=tk.W, padx=10, pady=2)
 
+        # Status bar
+        status_bar_frame = ttk.Frame(self.param_frame, relief="solid", borderwidth=1)
+        status_bar_frame.pack(side=tk.BOTTOM, fill=tk.X)
+        self.status_bar = ttk.Label(status_bar_frame, text="Status: Ready")
+        self.status_bar.pack(side=tk.LEFT, padx=5)
+
         # Menu
         menubar = tk.Menu(self)
         filemenu = tk.Menu(menubar, tearoff=0)
@@ -461,6 +461,8 @@ class RidgeDetectorGUI(tk.Tk):
         index = {ax: var.get() for ax, var in self.image_index.items()}
         self.image.set_frame(**index)
         self.display_image()
+        if self._detector_thread is not None:
+            self._skip_ridge_display = True
         self.update_ridges()
 
     def display_image(self):
@@ -544,7 +546,11 @@ class RidgeDetectorGUI(tk.Tk):
         self.ridge_image = Image.fromarray(
             self.ridge_data.get_image_contours(params.estimate_width)
         )
-        self.display_image()
+        # Avoid showing old ridges after the frame has changed
+        if self._skip_ridge_display:
+            self._skip_ridge_display = False
+        else:
+            self.display_image()
         # If detection was pending, re-run it
         if self._ridge_detector_pending:
             next_params, next_img = self._ridge_detector_pending
@@ -724,12 +730,12 @@ class RidgeDetectorGUI(tk.Tk):
             messagebox.showerror("Error", f"Failed to load parameters: {e}")
 
     def on_zoom(self, event: tk.Event):
-        if self.image_handle is None:
+        if self.image is None:
             return
         # Determine img scale factor
         if hasattr(event, "delta") and event.delta:
             delta = 1.25 if event.delta > 0 else 0.8
-        elif hasattr(event, "num"):
+        elif hasattr(event, "num"):  # Linux scrolling
             delta = 1.25 if event.num == 4 else 0.8
         else:
             delta = 1

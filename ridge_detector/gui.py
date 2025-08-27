@@ -249,9 +249,19 @@ class RidgeDetectorGUI(tk.Tk):
             self.param_frame, text="Correct Position", variable=self.correct_pos_var
         ).pack(anchor=tk.W, padx=10, pady=2)
 
-        ttk.Button(self.param_frame, text="Apply", command=self.display_ridges).pack(
+        # Calculate row
+        ttk.Separator(self.param_frame, orient=tk.HORIZONTAL).pack(
+            fill=tk.X, padx=10, pady=2
+        )
+        self.auto_calculate_ridges = tk.BooleanVar(value=True)
+        ttk.Button(self.param_frame, text="Calculate", command=self.update_ridges).pack(
             anchor=tk.W, padx=10, pady=2
         )
+        ttk.Checkbutton(
+            self.param_frame,
+            text="Auto Calculate Ridges",
+            variable=self.auto_calculate_ridges,
+        ).pack(anchor=tk.W, padx=10, pady=2)
 
         # Menu
         menubar = tk.Menu(self)
@@ -335,7 +345,7 @@ class RidgeDetectorGUI(tk.Tk):
         self.ridge_image = None
         self.ridge_data = None
         self.zoom_to_fit_image()  # Also calls display_image()
-        self.display_ridges()
+        self.update_ridges()
 
     def populate_image_sliders(self, shape: dict[str, int]):
         if self.img is None:
@@ -366,7 +376,7 @@ class RidgeDetectorGUI(tk.Tk):
                     slider.set(int_var.get()),
                     self.clear_ridge_image(),
                     self.display_image(),
-                    self.display_ridges(),
+                    self.update_ridges(),
                 ),
             )
             int_var.set(0)
@@ -422,7 +432,7 @@ class RidgeDetectorGUI(tk.Tk):
         self.display_image()
 
     def on_params_update(self, name: str, index: str, mode: str):
-        self.display_ridges()
+        self.update_ridges()
 
     def get_line_widths(self) -> list[int]:
         line_widths = self.line_widths_var.get()
@@ -441,8 +451,8 @@ class RidgeDetectorGUI(tk.Tk):
             correct_pos=self.correct_pos_var.get(),
         )
 
-    def display_ridges(self):
-        if self.img is None:
+    def update_ridges(self):
+        if self.img is None or not self.auto_calculate_ridges.get():
             return
         try:
             params = self.get_ridge_detector_params()
@@ -455,11 +465,11 @@ class RidgeDetectorGUI(tk.Tk):
                 self._ridge_detector_pending = self.img
                 return
             self._detector_thread = threading.Thread(
-                target=self.detect_lines, args=(params, self.img), daemon=True
+                target=self._detect_lines, args=(params, self.img), daemon=True
             )
             self._detector_thread.start()
 
-    def detect_lines(
+    def _detect_lines(
         self, params: RidgeDetectorConfig, img: Image.Image | tifffile.TiffFile
     ):
         detector = RidgeDetector(params)
@@ -473,7 +483,7 @@ class RidgeDetectorGUI(tk.Tk):
         if self._ridge_detector_pending:
             next_img = self._ridge_detector_pending
             self._ridge_detector_pending = None
-            self.detect_lines(params, next_img)
+            self._detect_lines(params, next_img)
 
     def save_ridge_image(self):
         if self.ridge_image is None:

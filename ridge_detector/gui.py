@@ -156,7 +156,8 @@ class RidgeDetectorGUI(tk.Tk):
 
     def __init__(self):
         super().__init__()
-        self.title("Ridge Detector GUI")
+        self._base_title = "Ridge Detector GUI"
+        self.title(self._base_title)
         self.geometry("900x600")
 
         # Main frame
@@ -472,6 +473,7 @@ class RidgeDetectorGUI(tk.Tk):
         self.populate_image_sliders(self.image.stack_shape, self.image.dim_names)
         self.ridge_image = None
         self.ridge_data = None
+        self.title(f"{file_path.name} - {self._base_title}")
         self.zoom_to_fit()  # Also calls display_image()
         self.update_ridges()
         self.set_status("Status: Ready")

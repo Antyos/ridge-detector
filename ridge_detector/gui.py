@@ -407,6 +407,28 @@ class RidgeDetectorGUI(tk.Tk):
         viewmenu.add_command(
             label="Zoom to Fit", command=self.zoom_to_fit, accelerator="(F)"
         )
+        viewmenu.add_separator()
+        # Ridge overlay
+        self.overlay_mode = tk.StringVar(value="ridges")
+        self.overlay_mode.trace_add(
+            "write", lambda *_: (self._set_ridge_image(), self.display_image())
+        )
+        viewmenu.add_radiobutton(
+            label="Show Image Only", variable=self.overlay_mode, value="base"
+        )
+        viewmenu.add_radiobutton(
+            label="Show Ridges", variable=self.overlay_mode, value="ridges"
+        )
+        viewmenu.add_radiobutton(
+            label="Show Binary Contours",
+            variable=self.overlay_mode,
+            value="binary_contours",
+        )
+        viewmenu.add_radiobutton(
+            label="Show Binary Widths",
+            variable=self.overlay_mode,
+            value="binary_widths",
+        )
         menubar.add_cascade(label="View", menu=viewmenu)
         self.config(menu=menubar)
 
@@ -592,9 +614,7 @@ class RidgeDetectorGUI(tk.Tk):
         detector = RidgeDetector(params)
         self.set_status("Detecting ridges...")
         self.ridge_data = detector.detect_lines(img_arr)
-        self.ridge_image = Image.fromarray(
-            self.ridge_data.get_image_contours(params.estimate_width)
-        )
+        self._set_ridge_image(show_width=params.estimate_width)
         # Avoid showing old ridges after the frame has changed
         if self._skip_ridge_display:
             self._skip_ridge_display = False
@@ -606,6 +626,28 @@ class RidgeDetectorGUI(tk.Tk):
             self._ridge_detector_pending = None
             self._detect_lines(next_params, next_img)
         self.set_status("Ready!")
+
+    def _set_ridge_image(self, show_width: bool | None = None):
+        if self.ridge_data is None:
+            return
+        if show_width is None:
+            show_width = self.estimate_width_var.get()
+        overlay_mode = self.overlay_mode.get()
+        if overlay_mode == "base":
+            ridge_image = None
+        elif overlay_mode == "ridges":
+            ridge_image = self.ridge_data.get_image_contours(show_width=show_width)
+        elif overlay_mode == "binary_contours":
+            ridge_image = self.ridge_data.get_binary_contours()
+        elif overlay_mode == "binary_widths":
+            ridge_image = self.ridge_data.get_binary_widths()
+        else:
+            raise ValueError(f"Invalid overlay mode: {overlay_mode}")
+        # Set ridge image
+        if ridge_image is not None:
+            self.ridge_image = Image.fromarray(ridge_image)
+        else:
+            self.ridge_image = None
 
     def save_ridge_image(self):
         if self.ridge_image is None:

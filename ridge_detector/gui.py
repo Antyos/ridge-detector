@@ -217,7 +217,7 @@ class RidgeDetectorGUI(tk.Tk):
         ttk.Entry(
             self.param_frame,
             textvariable=self.line_widths_var,
-        ).pack(fill=tk.X, padx=10, pady=2)
+        ).pack(fill=tk.X, padx=10, pady=(2, 5))
 
         # low_contrast
         self.low_contrast_var = tk.IntVar(value=100)
@@ -226,7 +226,7 @@ class RidgeDetectorGUI(tk.Tk):
         self.high_contrast_var.trace_add("write", self.on_params_update)
         ttk.Label(self.param_frame, text="Low Contrast").pack(anchor=tk.W, padx=10)
         low_contrast_frame = ttk.Frame(self.param_frame)
-        low_contrast_frame.pack(fill=tk.X, padx=10, pady=2)
+        low_contrast_frame.pack(fill=tk.X, padx=10, pady=(2, 5))
         ttk.Scale(
             low_contrast_frame,
             from_=0,
@@ -244,12 +244,12 @@ class RidgeDetectorGUI(tk.Tk):
             textvariable=self.low_contrast_var,
             width=5,
             increment=1,
-        ).pack(fill=tk.X, padx=10, pady=2)
+        ).pack(fill=tk.X, padx=10)
 
         # high_contrast
         ttk.Label(self.param_frame, text="High Contrast").pack(anchor=tk.W, padx=10)
         high_contrast_frame = ttk.Frame(self.param_frame)
-        high_contrast_frame.pack(fill=tk.X, padx=10, pady=2)
+        high_contrast_frame.pack(fill=tk.X, padx=10, pady=(2, 5))
         ttk.Scale(
             high_contrast_frame,
             from_=0,
@@ -267,24 +267,26 @@ class RidgeDetectorGUI(tk.Tk):
             textvariable=self.high_contrast_var,
             width=5,
             increment=1,
-        ).pack(fill=tk.X, padx=10, pady=2)
+        ).pack(fill=tk.X, padx=10)
 
         # min_len
         self.min_len_var = tk.IntVar(value=5)
         self.min_len_var.trace_add("write", self.on_params_update)
-        ttk.Label(self.param_frame, text="Min Length").pack(anchor=tk.W, padx=10)
+        ttk.Label(self.param_frame, text="Min Length (0=disable)").pack(
+            anchor=tk.W, padx=10
+        )
         ttk.Spinbox(
             self.param_frame,
             from_=0,
             to=float("inf"),
             textvariable=self.min_len_var,
             increment=1,
-        ).pack(fill=tk.X, padx=10, pady=2)
+        ).pack(fill=tk.X, padx=10, pady=(2, 5))
 
         # max_len
         self.max_len_var = tk.IntVar(value=0)
         self.max_len_var.trace_add("write", self.on_params_update)
-        ttk.Label(self.param_frame, text="Max Length (0 = no max)").pack(
+        ttk.Label(self.param_frame, text="Max Length (0=disable)").pack(
             anchor=tk.W, padx=10
         )
         ttk.Spinbox(
@@ -293,7 +295,7 @@ class RidgeDetectorGUI(tk.Tk):
             to=float("inf"),
             textvariable=self.max_len_var,
             increment=1,
-        ).pack(fill=tk.X, padx=10, pady=2)
+        ).pack(fill=tk.X, padx=10, pady=(2, 5))
 
         # dark_line
         self.dark_line_var = tk.BooleanVar(value=True)

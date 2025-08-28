@@ -4,6 +4,7 @@ import tkinter as tk
 from collections.abc import Sequence
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
+from tkinter import font as tkfont
 from typing import Any, NamedTuple, TypeGuard
 
 import numpy as np
@@ -326,17 +327,54 @@ class RidgeDetectorGUI(tk.Tk):
 
         # Calculate row
         ttk.Separator(self.param_frame, orient=tk.HORIZONTAL).pack(
-            fill=tk.X, padx=10, pady=2
+            fill=tk.X, padx=10, pady=5
         )
         self.auto_calculate_ridges = tk.BooleanVar(value=False)
-        ttk.Button(self.param_frame, text="Calculate", command=self.update_ridges).pack(
-            anchor=tk.W, padx=10, pady=2
-        )
+        auto_calculate_row = ttk.Frame(self.param_frame)
+        auto_calculate_row.pack(fill=tk.X, padx=10, pady=(2, 5))
+        ttk.Button(
+            auto_calculate_row,
+            text="Calculate",
+            command=lambda: self.update_ridges(force=True),
+        ).pack(side=tk.LEFT)
         ttk.Checkbutton(
-            self.param_frame,
-            text="Auto Calculate Ridges",
+            auto_calculate_row,
+            text="Auto Calculate",
             variable=self.auto_calculate_ridges,
-        ).pack(anchor=tk.W, padx=10, pady=2)
+            # Run update_ridges() when toggled on
+            command=lambda: self.auto_calculate_ridges.get() and self.update_ridges(),
+        ).pack(side=tk.LEFT, padx=10)
+
+        self.min_auto_line_width = tk.IntVar(value=1)
+        ttk.Label(
+            self.param_frame,
+            text="Minimum line width for auto calculate",
+        ).pack(anchor=tk.W, padx=10)
+        ttk.Spinbox(
+            self.param_frame,
+            from_=0,
+            to=float("inf"),
+            textvariable=self.min_auto_line_width,
+            increment=1,
+        ).pack(fill=tk.X, padx=10)
+        min_auto_line_width_description = ttk.Label(
+            self.param_frame,
+            text="Skip auto calculate when any line widths are below this value to reduce unnecessary computation. (0=disable)",
+            font=(
+                tkfont.nametofont("TkDefaultFont").actual()["family"],
+                tkfont.nametofont("TkDefaultFont").actual()["size"],
+                "italic",
+            ),
+            wraplength=1,
+            justify=tk.LEFT,
+        )
+        min_auto_line_width_description.pack(anchor=tk.W, fill=tk.X, padx=10, pady=2)
+        min_auto_line_width_description.bind(
+            "<Configure>",
+            lambda event, widget=min_auto_line_width_description: widget.config(
+                wraplength=event.width - 25
+            ),
+        )
 
         # Status bar
         status_bar_frame = ttk.Frame(self.param_frame, relief="solid", borderwidth=1)
@@ -500,7 +538,7 @@ class RidgeDetectorGUI(tk.Tk):
         self.display_image()
 
     def on_params_update(self, name: str, index: str, mode: str):
-        self.update_ridges()
+        self.update_ridges(force=False)
 
     def get_line_widths(self) -> list[int]:
         line_widths = self.line_widths_var.get()
@@ -519,13 +557,22 @@ class RidgeDetectorGUI(tk.Tk):
             correct_pos=self.correct_pos_var.get(),
         )
 
-    def update_ridges(self):
-        if self.image is None or not self.auto_calculate_ridges.get():
+    def update_ridges(self, force: bool = False):
+        auto_calculate = self.auto_calculate_ridges.get()
+        if self.image is None or (not auto_calculate and not force):
             return
         try:
             params = self.get_ridge_detector_params()
         except (tk.TclError, InvalidLineWidthError):
             # Invalid values in parameter input fields
+            return
+        if (
+            not force
+            and auto_calculate
+            and self.min_auto_line_width.get() > 0
+            and any(np.asarray(params.line_widths) <= self.min_auto_line_width.get())
+        ):
+            self.set_status("WARNING: Low line widths detected")
             return
         with self._ridge_detector_lock:
             # Queue up at most one more ridge detection

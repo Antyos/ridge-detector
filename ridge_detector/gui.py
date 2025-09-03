@@ -364,28 +364,41 @@ class RidgeDetectorGUI(tk.Tk):
             value="base",
             accelerator="1",
         )
-        self.bind_all("1", lambda _: self.overlay_mode.set("base"))
+        self.bind_all(
+            "1", lambda _: not self.has_entry_focus() and self.overlay_mode.set("base")
+        )
         viewmenu.add_radiobutton(
             label="Show Ridges",
             variable=self.overlay_mode,
             value="ridges",
             accelerator="2",
         )
-        self.bind_all("2", lambda _: self.overlay_mode.set("ridges"))
+        self.bind_all(
+            "2",
+            lambda _: not self.has_entry_focus() and self.overlay_mode.set("ridges"),
+        )
         viewmenu.add_radiobutton(
             label="Show Binary Contours",
             variable=self.overlay_mode,
             value="binary_contours",
             accelerator="3",
         )
-        self.bind_all("3", lambda _: self.overlay_mode.set("binary_contours"))
+        self.bind_all(
+            "3",
+            lambda _: not self.has_entry_focus()
+            and self.overlay_mode.set("binary_contours"),
+        )
         viewmenu.add_radiobutton(
             label="Show Binary Widths",
             variable=self.overlay_mode,
             value="binary_widths",
             accelerator="4",
         )
-        self.bind_all("4", lambda _: self.overlay_mode.set("binary_widths"))
+        self.bind_all(
+            "4",
+            lambda _: not self.has_entry_focus()
+            and self.overlay_mode.set("binary_widths"),
+        )
         menubar.add_cascade(label="View", menu=viewmenu)
         self.config(menu=menubar)
 
@@ -410,6 +423,11 @@ class RidgeDetectorGUI(tk.Tk):
 
         # Register close event
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
+
+    def has_entry_focus(self) -> bool:
+        """True if the current widget in focus is an entry item."""
+        widget = self.focus_get()
+        return isinstance(widget, (ttk.Entry,))
 
     def set_status(self, message: str):
         self.status_bar.config(text=message)

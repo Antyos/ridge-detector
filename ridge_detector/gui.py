@@ -104,7 +104,7 @@ class SpinboxScale(ttk.Frame):
         internal_spacing: float = 10,
         scale_kwargs: dict[str, Any] | None = None,
         spinbox_kwargs: dict[str, Any] | None = None,
-        parse_scale_value: Callable[[str], float | int] | None = None,
+        parse_scale_value: Callable[[str | float], float | int] | None = None,
         # on_value_change: Callable[[int | float], None] | None = None,
         **kwargs,
     ):
@@ -119,7 +119,7 @@ class SpinboxScale(ttk.Frame):
             self.label = None
 
         self.variable = variable
-
+        self.increment = increment
         self._parse_scale_value = parse_scale_value or float
 
         self.scale = ttk.Scale(
@@ -132,22 +132,37 @@ class SpinboxScale(ttk.Frame):
             **scale_kwargs,
         )
         self.scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=internal_spacing)
+        self.scale.bind("<MouseWheel>", self.on_scale_scroll)  # Windows
+        self.scale.bind("<Button-4>", self.on_scale_scroll)  # Linux scroll up
+        self.scale.bind("<Button-5>", self.on_scale_scroll)  # Linux scroll down
         self.spinbox = ttk.Spinbox(
             self,
             from_=from_,
             to=to,
             textvariable=self.variable,
             width=5,
-            increment=increment,
+            increment=self.increment,
             **spinbox_kwargs,
         )
         self.spinbox.pack(side=tk.LEFT)
         # Quantize the scale to allowed values
         self.variable.trace_add("write", lambda *_: self.scale.set(self.variable.get()))
 
-    def on_scale_update(self, val: str):
-        # current_val = self.variable.get()
+    def on_scale_scroll(self, event: tk.Event):
+        if hasattr(event, "delta") and event.delta:
+            direction = 1 if event.delta > 0 else -1
+        elif hasattr(event, "num") and event.num:  # Linux scrolling
+            direction = 1 if event.num == 4 else -1
+        else:
+            direction = 0
+        current_val = self.variable.get()
+        new_val = current_val + direction * self.increment
+        self.on_scale_update(new_val)
+
+    def on_scale_update(self, val: str | float):
         new_val = self._parse_scale_value(val)
+        # If we put self.variable.set() outside the if statement, it goes back to not
+        # thinking we might be setting a float on an IntVar
         if isinstance(self.variable, tk.IntVar):
             new_val = int(new_val)
             self.variable.set(new_val)
@@ -238,8 +253,9 @@ class RidgeDetectorGUI(tk.Tk):
             variable=self.low_contrast_var,
             from_=0,
             to=255,
-            parse_scale_value=lambda value: min(
-                int(float(value)), self.high_contrast_var.get()
+            scale_kwargs={"takefocus": False},
+            parse_scale_value=lambda value, hc_var=self.high_contrast_var: min(
+                int(float(value)), hc_var.get()
             ),
         )
         low_contrast_spinbox_scale.pack(fill=tk.X, padx=10, pady=(2, 5))
@@ -251,8 +267,9 @@ class RidgeDetectorGUI(tk.Tk):
             variable=self.high_contrast_var,
             from_=0,
             to=255,
-            parse_scale_value=lambda val: max(
-                int(float(val)), self.low_contrast_var.get()
+            scale_kwargs={"takefocus": False},
+            parse_scale_value=lambda val, lc_var=self.low_contrast_var: max(
+                int(float(val)), lc_var.get()
             ),
         )
         high_contrast_spinbox_scale.pack(fill=tk.X, padx=10, pady=(2, 5))

@@ -291,6 +291,16 @@ class RidgeDetectorGUI(tk.Tk):
             # Run update_ridges() when toggled on
             command=lambda: self.auto_calculate_ridges.get() and self.update_ridges(),
         ).pack(side=tk.LEFT, padx=10)
+        # Hotkeys for auto calculate. "a" to toggle. "shift+a" to compute.
+        self.bind(
+            "a",
+            lambda _: not self.has_entry_focus()
+            and self.auto_calculate_ridges.set(not self.auto_calculate_ridges.get()),
+        )
+        self.bind(
+            "<Shift-a>",
+            lambda _: not self.has_entry_focus() and self.update_ridges(force=True),
+        )
 
         self.min_auto_line_width = tk.IntVar(value=1)
         ttk.Label(

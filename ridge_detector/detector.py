@@ -479,6 +479,23 @@ class RidgeData:
         return dataframe
 
 
+class RidgeDetectorConfigDict(TypedDict, total=False):
+    """Configuration dictionary for RidgeDetector.
+
+    Used for `**kwargs: Unpack[RidgeDetectorConfigDict]`
+    """
+
+    line_widths: ArrayLikeInt
+    low_contrast: int
+    high_contrast: int
+    min_len: int
+    max_len: int
+    dark_line: bool
+    estimate_width: bool
+    extend_line: bool
+    correct_pos: bool
+
+
 @dataclass
 class RidgeDetectorConfig:
     """Configuration for the RidgeDetector.
@@ -539,6 +556,22 @@ class RidgeDetectorConfig:
         elif self.line_widths <= 0:
             raise ValueError("line_widths must contain only positive non-zero values")
 
+    def with_parameters(self, **params: Unpack[RidgeDetectorConfigDict]):
+        return dataclasses.replace(self, **params)
+
+    def asdict(self) -> RidgeDetectorConfigDict:
+        return {
+            "line_widths": self.line_widths,
+            "low_contrast": self.low_contrast,
+            "high_contrast": self.high_contrast,
+            "min_len": self.min_len,
+            "max_len": self.max_len,
+            "dark_line": self.dark_line,
+            "estimate_width": self.estimate_width,
+            "extend_line": self.extend_line,
+            "correct_pos": self.correct_pos,
+        }
+
     @property
     def sigmas(self) -> NDArray:
         return np.atleast_1d(self.line_widths) / (2 * np.sqrt(3)) + 0.5
@@ -554,23 +587,6 @@ class RidgeDetectorConfig:
     @property
     def mode(self) -> LinesUtil.MODE:
         return LinesUtil.MODE.dark if self.dark_line else LinesUtil.MODE.light
-
-
-class RidgeDetectorConfigDict(TypedDict, total=False):
-    """Configuration dictionary for RidgeDetector.
-
-    Used for `**kwargs: Unpack[RidgeDetectorConfigDict]`
-    """
-
-    line_widths: ArrayLikeInt
-    low_contrast: int
-    high_contrast: int
-    min_len: int
-    max_len: int
-    dark_line: bool
-    estimate_width: bool
-    extend_line: bool
-    correct_pos: bool
 
 
 class RidgeDetector:
@@ -607,10 +623,10 @@ class RidgeDetector:
     def __init__(
         self,
         config: Optional[RidgeDetectorConfig] = None,
-        **params: Unpack[RidgeDetectorConfigDict],
+        **extras: Unpack[RidgeDetectorConfigDict],
     ):
         # Allow manually overriding config parameters
-        self.config = dataclasses.replace(config or RidgeDetectorConfig(), **params)
+        self.config = (config or RidgeDetectorConfig()).with_parameters(**extras)
         # Initialize ridge data container
         self.data = None
 

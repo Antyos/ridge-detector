@@ -1,73 +1,22 @@
 import json
 import threading
 import tkinter as tk
-from collections.abc import Sequence
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from tkinter import font as tkfont
-from typing import Any, NamedTuple, TypeGuard
+from typing import Any, NamedTuple
 
 import numpy as np
 from numpy.typing import NDArray
 from PIL import Image, ImageTk
 from tifffile import tifffile
 
-from ridge_detector.detector import RidgeData, RidgeDetector, RidgeDetectorConfig
-
-
-class InvalidLineWidthError(ValueError): ...
-
-
-def is_int_list(lst: Sequence[int | None]) -> TypeGuard[list[int]]:
-    """Check if all elements in the list are integers."""
-    return all(isinstance(x, int) for x in lst)
-
-
-def parse_line_widths(line_widths: str) -> list[int]:
-    """Convert line widths from string to list of integers."""
-    if not line_widths:
-        raise InvalidLineWidthError("No line widths provided")
-    widths = []
-    for w in line_widths.split(","):
-        # Support slice syntax
-        if ":" in w:
-            segments = [seg.strip() for seg in w.split(":")]
-            if len(segments) > 3:
-                raise InvalidLineWidthError(
-                    f"Too many segments in line width range: {len(segments)}"
-                )
-            try:
-                int_segments = [int(seg) if seg else None for seg in segments]
-            except ValueError:
-                raise InvalidLineWidthError(
-                    f"Non integer in line width range: {segments}"
-                )
-            if int_segments[0] is None:
-                int_segments[0] = 1
-            if not is_int_list(int_segments):
-                raise InvalidLineWidthError(f"Ambiguous line width range: {segments}")
-            if any(seg <= 0 for seg in int_segments):
-                raise InvalidLineWidthError(
-                    f"Cannot use negative or zero values: {segments}"
-                )
-            # Use inclusive stop condition
-            if len(int_segments) > 1:
-                int_segments[1] += 1
-            widths.extend(range(*int_segments))
-        # Single digit
-        elif w.strip().isdigit():
-            try:
-                value = int(w.strip())
-            except ValueError:
-                raise InvalidLineWidthError(f"Invalid line width: {w}")
-            if value <= 0:
-                raise InvalidLineWidthError(
-                    f"Cannot use negative or zero values: {value}"
-                )
-            widths.append(value)
-        else:
-            raise InvalidLineWidthError(f"Invalid line width: {w}")
-    return widths
+from ridge_detector.detector import (
+    InvalidLineWidthError,
+    RidgeData,
+    RidgeDetector,
+    RidgeDetectorConfig,
+)
 
 
 class Size(NamedTuple):
@@ -566,31 +515,29 @@ class RidgeDetectorGUI(tk.Tk):
     def on_params_update(self, name: str, index: str, mode: str):
         self.update_ridges(force=False)
 
-    def get_line_widths(self) -> list[int]:
-        line_widths = self.line_widths_var.get()
-        return parse_line_widths(line_widths)
-
-    def get_ridge_detector_params(self) -> RidgeDetectorConfig:
-        return RidgeDetectorConfig(
-            line_widths=self.get_line_widths(),
-            low_contrast=self.low_contrast_var.get(),
-            high_contrast=self.high_contrast_var.get(),
-            min_len=self.min_len_var.get(),
-            max_len=self.max_len_var.get(),
-            dark_line=self.dark_line_var.get(),
-            estimate_width=self.estimate_width_var.get(),
-            extend_line=self.extend_line_var.get(),
-            correct_pos=self.correct_pos_var.get(),
-        )
+    def get_ridge_detector_params(self) -> RidgeDetectorConfig | None:
+        try:
+            return RidgeDetectorConfig(
+                line_widths=self.line_widths_var.get(),
+                low_contrast=self.low_contrast_var.get(),
+                high_contrast=self.high_contrast_var.get(),
+                min_len=self.min_len_var.get(),
+                max_len=self.max_len_var.get(),
+                dark_line=self.dark_line_var.get(),
+                estimate_width=self.estimate_width_var.get(),
+                extend_line=self.extend_line_var.get(),
+                correct_pos=self.correct_pos_var.get(),
+            )
+        except (tk.TclError, InvalidLineWidthError):
+            # Invalid values in parameter input fields
+            return
 
     def update_ridges(self, force: bool = False):
         auto_calculate = self.auto_calculate_ridges.get()
         if self.image is None or (not auto_calculate and not force):
             return
-        try:
-            params = self.get_ridge_detector_params()
-        except (tk.TclError, InvalidLineWidthError):
-            # Invalid values in parameter input fields
+        params = self.get_ridge_detector_params()
+        if params is None:
             return
         if (
             not force
@@ -728,24 +675,8 @@ class RidgeDetectorGUI(tk.Tk):
         df.to_clipboard(index=False)
         self.set_status("Copied ridge data to clipboard")
 
-    def dump_parameters(self) -> dict[str, Any] | None:
-        try:
-            return {
-                "line_widths": self.line_widths_var.get(),
-                "low_contrast": self.low_contrast_var.get(),
-                "high_contrast": self.high_contrast_var.get(),
-                "min_len": self.min_len_var.get(),
-                "max_len": self.max_len_var.get(),
-                "dark_line": self.dark_line_var.get(),
-                "estimate_width": self.estimate_width_var.get(),
-                "extend_line": self.extend_line_var.get(),
-                "correct_pos": self.correct_pos_var.get(),
-            }
-        except tk.TclError:
-            return None
-
     def export_parameters(self):
-        params = self.dump_parameters()
+        params = self.get_ridge_detector_params()
         if not params:
             messagebox.showerror("Error", "Invalid parameters.")
             return
@@ -760,17 +691,17 @@ class RidgeDetectorGUI(tk.Tk):
         )
         if file_path:
             with open(file_path, "w") as f:
-                json.dump(params, f)
+                json.dump(params.asdict(), f)
             self.set_status(f"Exported parameters to '{file_path}'")
 
     def copy_parameters(self):
-        params = self.dump_parameters()
+        params = self.get_ridge_detector_params()
         if not params:
             messagebox.showerror("Error", "Invalid parameters.")
             return
         try:
             self.clipboard_clear()
-            self.clipboard_append(json.dumps(params))
+            self.clipboard_append(json.dumps(params.asdict()))
             self.copy_button.config(text="Copied!")
             self.after(2000, lambda: self.copy_button.config(text="Copy"))
         except Exception as e:

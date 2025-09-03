@@ -2,7 +2,7 @@ import dataclasses
 from dataclasses import dataclass
 from itertools import chain, pairwise, repeat
 from pathlib import Path
-from typing import Optional, Sequence, TypedDict, Unpack, cast
+from typing import Optional, Sequence, TypedDict, TypeGuard, Unpack, cast
 
 import cv2
 import imageio.v3 as iio
@@ -479,13 +479,21 @@ class RidgeData:
         return dataframe
 
 
+class InvalidLineWidthError(ValueError): ...
+
+
+def is_int_list(lst: Sequence[int | None]) -> TypeGuard[list[int]]:
+    """Check if all elements in the list are integers."""
+    return all(isinstance(x, int) for x in lst)
+
+
 class RidgeDetectorConfigDict(TypedDict, total=False):
     """Configuration dictionary for RidgeDetector.
 
     Used for `**kwargs: Unpack[RidgeDetectorConfigDict]`
     """
 
-    line_widths: ArrayLikeInt
+    line_widths: ArrayLikeInt | str
     low_contrast: int
     high_contrast: int
     min_len: int
@@ -525,7 +533,7 @@ class RidgeDetectorConfig:
         introduce artifacts in some cases. Unused if estimate_width is False.
     """
 
-    line_widths: ArrayLikeInt = dataclasses.field(
+    line_widths: ArrayLikeInt | str = dataclasses.field(
         default_factory=lambda: np.arange(1, 3)
     )
     low_contrast: int = 100
@@ -536,6 +544,7 @@ class RidgeDetectorConfig:
     estimate_width: bool = True
     extend_line: bool = False
     correct_pos: bool = False
+    _line_widths_numeric: ArrayLikeInt = dataclasses.field(init=False, repr=False)
 
     def __post_init__(self):
         if self.min_len < 0 or self.min_len > 255:
@@ -546,14 +555,18 @@ class RidgeDetectorConfig:
             raise ValueError(
                 f"max_len must be between 0 and 255, but got: {self.max_len}"
             )
-        if isinstance(self.line_widths, (Sequence, np.ndarray)):
-            if len(self.line_widths) == 0:
+        if isinstance(self.line_widths, str):
+            self._line_widths_numeric = self.parse_line_widths(self.line_widths)
+        else:
+            self._line_widths_numeric = self.line_widths
+        if isinstance(self._line_widths_numeric, (Sequence, np.ndarray)):
+            if len(self._line_widths_numeric) == 0:
                 raise ValueError("line_widths must contain at least one value")
-            elif any(w <= 0 for w in self.line_widths):
+            elif any(w <= 0 for w in self._line_widths_numeric):
                 raise ValueError(
                     "line_widths must contain only positive non-zero values"
                 )
-        elif self.line_widths <= 0:
+        elif self._line_widths_numeric <= 0:
             raise ValueError("line_widths must contain only positive non-zero values")
 
     def with_parameters(self, **params: Unpack[RidgeDetectorConfigDict]):
@@ -574,7 +587,7 @@ class RidgeDetectorConfig:
 
     @property
     def sigmas(self) -> NDArray:
-        return np.atleast_1d(self.line_widths) / (2 * np.sqrt(3)) + 0.5
+        return np.atleast_1d(self._line_widths_numeric) / (2 * np.sqrt(3)) + 0.5
 
     @property
     def clow(self) -> int:
@@ -587,6 +600,55 @@ class RidgeDetectorConfig:
     @property
     def mode(self) -> LinesUtil.MODE:
         return LinesUtil.MODE.dark if self.dark_line else LinesUtil.MODE.light
+
+    @staticmethod
+    def parse_line_widths(line_widths: str) -> list[int]:
+        """Convert line widths from string to list of integers."""
+        if not line_widths:
+            raise InvalidLineWidthError("No line widths provided")
+        widths = []
+        for w in line_widths.split(","):
+            # Support slice syntax
+            if ":" in w:
+                segments = [seg.strip() for seg in w.split(":")]
+                if len(segments) > 3:
+                    raise InvalidLineWidthError(
+                        f"Too many segments in line width range: {len(segments)}"
+                    )
+                try:
+                    int_segments = [int(seg) if seg else None for seg in segments]
+                except ValueError:
+                    raise InvalidLineWidthError(
+                        f"Non integer in line width range: {segments}"
+                    )
+                if int_segments[0] is None:
+                    int_segments[0] = 1
+                if not is_int_list(int_segments):
+                    raise InvalidLineWidthError(
+                        f"Ambiguous line width range: {segments}"
+                    )
+                if any(seg <= 0 for seg in int_segments):
+                    raise InvalidLineWidthError(
+                        f"Cannot use negative or zero values: {segments}"
+                    )
+                # Use inclusive stop condition
+                if len(int_segments) > 1:
+                    int_segments[1] += 1
+                widths.extend(range(*int_segments))
+            # Single digit
+            elif w.strip().isdigit():
+                try:
+                    value = int(w.strip())
+                except ValueError:
+                    raise InvalidLineWidthError(f"Invalid line width: {w}")
+                if value <= 0:
+                    raise InvalidLineWidthError(
+                        f"Cannot use negative or zero values: {value}"
+                    )
+                widths.append(value)
+            else:
+                raise InvalidLineWidthError(f"Invalid line width: {w}")
+        return widths
 
 
 class RidgeDetector:

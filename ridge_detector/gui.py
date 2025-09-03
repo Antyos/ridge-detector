@@ -4,7 +4,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from tkinter import font as tkfont
-from typing import Any, NamedTuple
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -17,11 +17,6 @@ from ridge_detector.detector import (
     RidgeDetector,
     RidgeDetectorConfig,
 )
-
-
-class Size(NamedTuple):
-    width: int
-    height: int
 
 
 class ImageData:
@@ -338,12 +333,12 @@ class RidgeDetectorGUI(tk.Tk):
         menubar = tk.Menu(self)
         filemenu = tk.Menu(menubar, tearoff=0)
         filemenu.add_command(
-            label="Open Image", command=self.open_image, accelerator="(Ctrl+O)"
+            label="Open Image", command=self.open_image, accelerator="Ctrl+O"
         )
         filemenu.add_command(
             label="Save Ridge Image",
             command=self.save_ridge_image,
-            accelerator="(Ctrl+S)",
+            accelerator="Ctrl+S",
         )
         filemenu.add_command(label="Export Ridge Data", command=self.export_ridges)
         filemenu.add_command(label="Copy Ridge Data", command=self.copy_ridge_data)
@@ -355,7 +350,7 @@ class RidgeDetectorGUI(tk.Tk):
         menubar.add_cascade(label="File", menu=filemenu)
         viewmenu = tk.Menu(menubar, tearoff=0)
         viewmenu.add_command(
-            label="Zoom to Fit", command=self.zoom_to_fit, accelerator="(F)"
+            label="Zoom to Fit", command=self.zoom_to_fit, accelerator="F"
         )
         viewmenu.add_separator()
         # Ridge overlay
@@ -364,21 +359,33 @@ class RidgeDetectorGUI(tk.Tk):
             "write", lambda *_: (self._set_ridge_image(), self.display_image())
         )
         viewmenu.add_radiobutton(
-            label="Show Image Only", variable=self.overlay_mode, value="base"
+            label="Show Image Only",
+            variable=self.overlay_mode,
+            value="base",
+            accelerator="1",
         )
+        self.bind_all("1", lambda _: self.overlay_mode.set("base"))
         viewmenu.add_radiobutton(
-            label="Show Ridges", variable=self.overlay_mode, value="ridges"
+            label="Show Ridges",
+            variable=self.overlay_mode,
+            value="ridges",
+            accelerator="2",
         )
+        self.bind_all("2", lambda _: self.overlay_mode.set("ridges"))
         viewmenu.add_radiobutton(
             label="Show Binary Contours",
             variable=self.overlay_mode,
             value="binary_contours",
+            accelerator="3",
         )
+        self.bind_all("3", lambda _: self.overlay_mode.set("binary_contours"))
         viewmenu.add_radiobutton(
             label="Show Binary Widths",
             variable=self.overlay_mode,
             value="binary_widths",
+            accelerator="4",
         )
+        self.bind_all("4", lambda _: self.overlay_mode.set("binary_widths"))
         menubar.add_cascade(label="View", menu=viewmenu)
         self.config(menu=menubar)
 

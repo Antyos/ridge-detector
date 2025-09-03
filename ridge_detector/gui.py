@@ -4,7 +4,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from tkinter import font as tkfont
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 from numpy.typing import NDArray
@@ -92,6 +92,69 @@ class ImageData:
         return np.array(self._image)
 
 
+class SpinboxScale(ttk.Frame):
+    def __init__(
+        self,
+        master,
+        variable: tk.IntVar | tk.DoubleVar,
+        label: str | None = None,
+        from_: float = 0,
+        to: float = 100,
+        increment: float = 1,
+        internal_spacing: float = 10,
+        scale_kwargs: dict[str, Any] | None = None,
+        spinbox_kwargs: dict[str, Any] | None = None,
+        parse_scale_value: Callable[[str], float | int] | None = None,
+        # on_value_change: Callable[[int | float], None] | None = None,
+        **kwargs,
+    ):
+        super().__init__(master, **kwargs)
+        scale_kwargs = scale_kwargs or {}
+        spinbox_kwargs = spinbox_kwargs or {}
+
+        if label:
+            self.label = ttk.Label(self, text=label)
+            self.label.pack(side=tk.LEFT)
+        else:
+            self.label = None
+
+        self.variable = variable
+
+        self._parse_scale_value = parse_scale_value or float
+
+        self.scale = ttk.Scale(
+            self,
+            from_=from_,
+            to=to,
+            orient=tk.HORIZONTAL,
+            variable=self.variable,
+            command=self.on_scale_update,
+            **scale_kwargs,
+        )
+        self.scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=internal_spacing)
+        self.spinbox = ttk.Spinbox(
+            self,
+            from_=from_,
+            to=to,
+            textvariable=self.variable,
+            width=5,
+            increment=increment,
+            **spinbox_kwargs,
+        )
+        self.spinbox.pack(side=tk.LEFT)
+        # Quantize the scale to allowed values
+        self.variable.trace_add("write", lambda *_: self.scale.set(self.variable.get()))
+
+    def on_scale_update(self, val: str):
+        # current_val = self.variable.get()
+        new_val = self._parse_scale_value(val)
+        if isinstance(self.variable, tk.IntVar):
+            new_val = int(new_val)
+            self.variable.set(new_val)
+        else:
+            self.variable.set(new_val)
+
+
 class RidgeDetectorGUI(tk.Tk):
     ridge_image: Image.Image | None = None
     ridge_data: RidgeData | None = None
@@ -170,49 +233,29 @@ class RidgeDetectorGUI(tk.Tk):
         self.high_contrast_var = tk.IntVar(value=200)
         self.high_contrast_var.trace_add("write", self.on_params_update)
         ttk.Label(self.param_frame, text="Low Contrast").pack(anchor=tk.W, padx=10)
-        low_contrast_frame = ttk.Frame(self.param_frame)
-        low_contrast_frame.pack(fill=tk.X, padx=10, pady=(2, 5))
-        ttk.Scale(
-            low_contrast_frame,
-            from_=0,
-            to=255,
-            orient=tk.HORIZONTAL,
+        low_contrast_spinbox_scale = SpinboxScale(
+            self.param_frame,
             variable=self.low_contrast_var,
-            command=lambda value: self.low_contrast_var.set(
-                min(int(float(value)), self.high_contrast_var.get())
-            ),
-        ).pack(side=tk.LEFT, fill=tk.X, expand=True)
-        ttk.Spinbox(
-            low_contrast_frame,
             from_=0,
             to=255,
-            textvariable=self.low_contrast_var,
-            width=5,
-            increment=1,
-        ).pack(fill=tk.X, padx=10)
+            parse_scale_value=lambda value: min(
+                int(float(value)), self.high_contrast_var.get()
+            ),
+        )
+        low_contrast_spinbox_scale.pack(fill=tk.X, padx=10, pady=(2, 5))
 
         # high_contrast
         ttk.Label(self.param_frame, text="High Contrast").pack(anchor=tk.W, padx=10)
-        high_contrast_frame = ttk.Frame(self.param_frame)
-        high_contrast_frame.pack(fill=tk.X, padx=10, pady=(2, 5))
-        ttk.Scale(
-            high_contrast_frame,
-            from_=0,
-            to=255,
-            orient=tk.HORIZONTAL,
+        high_contrast_spinbox_scale = SpinboxScale(
+            self.param_frame,
             variable=self.high_contrast_var,
-            command=lambda value: self.high_contrast_var.set(
-                max(int(float(value)), self.low_contrast_var.get())
-            ),
-        ).pack(side=tk.LEFT, fill=tk.X, expand=True)
-        ttk.Spinbox(
-            high_contrast_frame,
             from_=0,
             to=255,
-            textvariable=self.high_contrast_var,
-            width=5,
-            increment=1,
-        ).pack(fill=tk.X, padx=10)
+            parse_scale_value=lambda val: max(
+                int(float(val)), self.low_contrast_var.get()
+            ),
+        )
+        high_contrast_spinbox_scale.pack(fill=tk.X, padx=10, pady=(2, 5))
 
         # min_len
         self.min_len_var = tk.IntVar(value=5)
@@ -475,34 +518,19 @@ class RidgeDetectorGUI(tk.Tk):
         self.image_index = {k: tk.IntVar(value=0) for k in shape.keys()}
         for axis, value in shape.items():
             int_var = self.image_index[axis]
-            frame = ttk.Frame(self.image_sliders)
-            frame.pack(side=tk.BOTTOM, fill=tk.X, expand=True)
-            if names is not None and axis in names:
-                name = names[axis]
-            else:
-                name = axis
-            ttk.Label(frame, text=f"{name}:").pack(side=tk.LEFT)
-            slider = ttk.Scale(
-                frame,
+            int_var.trace_add("write", self.on_slider_update)
+            name = names[axis] if names and axis in names else axis
+            spinbox_scale = SpinboxScale(
+                self.image_sliders,
+                label=f"{name}:",
+                variable=int_var,
                 from_=0,
                 to=value - 1,
-                orient=tk.HORIZONTAL,
-                command=lambda val, var=int_var: var.set(int(float(val))),
             )
-            slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=10)
-            ttk.Spinbox(
-                frame, from_=0, to=value - 1, textvariable=int_var, width=5, increment=1
-            ).pack(side=tk.LEFT)
-            int_var.trace_add(
-                "write",
-                lambda *_: (
-                    slider.set(int_var.get()),
-                    self.on_slider_update(),
-                ),
-            )
-            int_var.set(0)
+            spinbox_scale.pack(side=tk.BOTTOM, fill=tk.X, expand=True)
+        self.on_slider_update()
 
-    def on_slider_update(self):
+    def on_slider_update(self, *_):
         if self.image is None:
             return
         self.ridge_image = None

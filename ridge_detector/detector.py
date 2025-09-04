@@ -547,13 +547,13 @@ class RidgeDetectorConfig:
     _line_widths_numeric: ArrayLikeInt = dataclasses.field(init=False, repr=False)
 
     def __post_init__(self):
-        if self.min_len < 0 or self.min_len > 255:
+        if self.low_contrast < 0 or self.low_contrast > 255:
             raise ValueError(
-                f"min_len must be between 0 and 255, but got: {self.min_len}"
+                f"low_contrast must be between 0 and 255, but got: {self.low_contrast}"
             )
-        if self.max_len < 0 or self.max_len > 255:
+        if self.high_contrast < 0 or self.high_contrast > 255:
             raise ValueError(
-                f"max_len must be between 0 and 255, but got: {self.max_len}"
+                f"high_contrast must be between 0 and 255, but got: {self.high_contrast}"
             )
         if isinstance(self.line_widths, str):
             self._line_widths_numeric = self.parse_line_widths(self.line_widths)
@@ -1386,7 +1386,7 @@ class RidgeDetector:
 
     def prune_contours(self, ridge_data: RidgeData) -> RidgeData:
         """Prune contours based on their length."""
-        if self.config.min_len < 0:
+        if self.config.min_len == 0 and self.config.max_len == 0:
             return ridge_data
 
         id_remove = []

@@ -586,6 +586,10 @@ class RidgeDetectorConfig:
         }
 
     @property
+    def line_widths_numeric(self) -> ArrayLikeInt:
+        return self._line_widths_numeric
+
+    @property
     def sigmas(self) -> NDArray:
         return np.atleast_1d(self._line_widths_numeric) / (2 * np.sqrt(3)) + 0.5
 

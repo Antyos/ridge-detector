@@ -623,7 +623,9 @@ class RidgeDetectorGUI(tk.Tk):
             not force
             and auto_calculate
             and self.min_auto_line_width.get() > 0
-            and any(np.asarray(params.line_widths) <= self.min_auto_line_width.get())
+            and any(
+                np.asarray(params.line_widths_numeric) <= self.min_auto_line_width.get()
+            )
         ):
             self.set_status("WARNING: Low line widths detected")
             return

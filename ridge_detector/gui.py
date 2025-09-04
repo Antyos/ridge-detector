@@ -60,20 +60,22 @@ class ImageData:
         if isinstance(self.handle, tifffile.TiffFile):
             if self.handle.is_imagej:
                 image_shape = self.handle.series[0].levels[0].sizes
-                _num_z = image_shape.get("depth", 1)
-                _num_c = image_shape.get("channel", 1)
-
-                flat_index = (
-                    (index.get("time", 0) * _num_z * _num_c)
-                    + (index.get("depth", 0) * _num_c)
-                    + index.get("channel", 0)
-                )
+                num_t = image_shape.get("time", 1)
+                num_z = image_shape.get("depth", 1)
+                num_c = image_shape.get("channel", 1)
+                # Bound the index values to the valid range of the image shape
+                t_idx = max(min(index.get("time", 0), num_t - 1), 0)
+                z_idx = max(min(index.get("depth", 0), num_z - 1), 0)
+                c_idx = max(min(index.get("channel", 0), num_c - 1), 0)
+                flat_index = (t_idx * num_z * num_c) + (z_idx * num_c) + c_idx
                 return self.handle.asarray(key=flat_index)
             return self.handle.pages.first.asarray()
         return self.handle
 
     def set_frame(self, **index: int):
-        self._image = self._get_frame(**index)
+        new_frame = self._get_frame(**index)
+        if new_frame is not None:
+            self._image = new_frame
 
     @property
     def image(self):
@@ -145,8 +147,6 @@ class SpinboxScale(ttk.Frame):
             **spinbox_kwargs,
         )
         self.spinbox.pack(side=tk.LEFT)
-        # Quantize the scale to allowed values
-        self.variable.trace_add("write", lambda *_: self.scale.set(self.variable.get()))
 
     def on_scale_scroll(self, event: tk.Event):
         if hasattr(event, "delta") and event.delta:
@@ -351,15 +351,15 @@ class RidgeDetectorGUI(tk.Tk):
             # Run update_ridges() when toggled on
             command=lambda: self.auto_calculate_ridges.get() and self.update_ridges(),
         ).pack(side=tk.LEFT, padx=10)
-        # Hotkeys for auto calculate. "a" to toggle. "shift+a" to compute.
+        # Hotkeys for auto calculate. "a" to compute. "shift+a" to toggle.
         self.bind(
             "a",
-            lambda _: not self.has_entry_focus()
-            and self.auto_calculate_ridges.set(not self.auto_calculate_ridges.get()),
+            lambda _: not self.has_entry_focus() and self.update_ridges(force=True),
         )
         self.bind(
-            "<Shift-a>",
-            lambda _: not self.has_entry_focus() and self.update_ridges(force=True),
+            "A",
+            lambda _: not self.has_entry_focus()
+            and self.auto_calculate_ridges.set(not self.auto_calculate_ridges.get()),
         )
 
         self.min_auto_line_width = tk.IntVar(value=1)
@@ -551,7 +551,11 @@ class RidgeDetectorGUI(tk.Tk):
         if self.image is None:
             return
         self.ridge_image = None
-        index = {ax: var.get() for ax, var in self.image_index.items()}
+        try:
+            index = {ax: var.get() for ax, var in self.image_index.items()}
+        except tk.TclError:
+            # Invalid value in one of the spinboxes
+            return
         self.image.set_frame(**index)
         self.display_image()
         if self._detector_thread is not None:

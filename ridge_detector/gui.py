@@ -337,6 +337,11 @@ class RidgeDetectorGUI(tk.Tk):
             fill=tk.X, padx=10, pady=5
         )
         self.auto_calculate_ridges = tk.BooleanVar(value=False)
+        # Run update_ridges() when toggled on
+        self.auto_calculate_ridges.trace_add(
+            "write",
+            lambda *_: self.auto_calculate_ridges.get() and self.update_ridges(),
+        )
         auto_calculate_row = ttk.Frame(self.param_frame)
         auto_calculate_row.pack(fill=tk.X, padx=10, pady=(2, 5))
         ttk.Button(
@@ -348,8 +353,6 @@ class RidgeDetectorGUI(tk.Tk):
             auto_calculate_row,
             text="Auto Calculate",
             variable=self.auto_calculate_ridges,
-            # Run update_ridges() when toggled on
-            command=lambda: self.auto_calculate_ridges.get() and self.update_ridges(),
         ).pack(side=tk.LEFT, padx=10)
         # Hotkeys for auto calculate. "a" to compute. "shift+a" to toggle.
         self.bind(
@@ -577,7 +580,7 @@ class RidgeDetectorGUI(tk.Tk):
                 max(int(image.width * self.img_scale), 1),
                 max(int(image.height * self.img_scale), 1),
             ),
-            Image.Resampling.NEAREST,
+            Image.Resampling.BOX,
         )
         self.tk_img = ImageTk.PhotoImage(scaled_image)
         self.canvas.delete("all")
@@ -623,16 +626,15 @@ class RidgeDetectorGUI(tk.Tk):
         params = self.get_ridge_detector_params()
         if params is None:
             return
-        if (
-            not force
-            and auto_calculate
-            and self.min_auto_line_width.get() > 0
-            and any(
-                np.asarray(params.line_widths_numeric) <= self.min_auto_line_width.get()
-            )
-        ):
-            self.set_status("WARNING: Low line widths detected")
-            return
+        if not force and auto_calculate and self.min_auto_line_width.get() > 0:
+            _line_widths = np.asarray(params.line_widths_numeric)
+            if any(_line_widths <= self.min_auto_line_width.get()):
+                self.set_status("WARNING: Low line widths detected")
+                return
+            elif any(_line_widths >= 100):  # Hard coded limit for now
+                self.set_status("WARNING: High line widths detected")
+                return
+        self.set_status("Preparing to detect ridges...")
         with self._ridge_detector_lock:
             # Queue up at most one more ridge detection
             if self._detector_thread is not None and self._detector_thread.is_alive():
@@ -840,6 +842,7 @@ class RidgeDetectorGUI(tk.Tk):
             messagebox.showerror("Error", f"Failed to load parameters: {e}")
 
     def on_zoom(self, event: tk.Event):
+        self.focus_set()
         if self.image is None:
             return
         # Determine img scale factor
@@ -859,10 +862,12 @@ class RidgeDetectorGUI(tk.Tk):
         self.display_image()
 
     def on_pan_start(self, event: tk.Event):
+        self.focus_set()
         self._pan_x_start = event.x
         self._pan_y_start = event.y
 
     def on_pan_move(self, event: tk.Event):
+        self.focus_set()
         if self.img_canvas_id is None:
             return
         dx = event.x - self._pan_x_start

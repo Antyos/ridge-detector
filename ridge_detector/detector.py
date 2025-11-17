@@ -805,7 +805,10 @@ class RidgeDetector:
                 # Determine the current pixel and calculate the pixels on the search line.
                 y, x = int(py + 0.5), int(px + 0.5)
                 dy, dx = py - y, px - x
-                line_length = max_line[LinesUtil.BR(y, height), LinesUtil.BC(x, width)]
+                line_length = max_line[
+                    LinesUtil.BR(y, height).astype(int),
+                    LinesUtil.BC(x, width).astype(int),
+                ]
                 line = bresenham(my, mx, line_length, dy, dx)
                 num_line = line.shape[0]
                 exty = np.zeros(num_line, dtype=int)
@@ -1269,8 +1272,8 @@ class RidgeDetector:
                 # Delete the point from the label image; using maxx and maxy as
                 # coordinates in the label image
                 i, j = np.meshgrid([-1, 0, 1], [-1, 0, 1])
-                rows = LinesUtil.BR(maxy + i, height)
-                cols = LinesUtil.BC(maxx + j, width)
+                rows = LinesUtil.BR(maxy + i, height).astype(int)
+                cols = LinesUtil.BC(maxx + j, width).astype(int)
                 mask = label[rows, cols] == len(contours) + 1
                 label[rows[mask], cols[mask]] = 0
 
@@ -1344,7 +1347,8 @@ class RidgeDetector:
 
             for j in range(num_points):
                 py, px = contour.row[j], contour.col[j]
-                r, c = LinesUtil.BR(round(py), height), LinesUtil.BC(round(px), width)
+                r = LinesUtil.BR(round(py), height).astype(int)
+                c = LinesUtil.BC(round(px), width).astype(int)
                 ny, nx = np.sin(contour.angle[j]), np.cos(contour.angle[j])
 
                 line = bresenham(ny, nx, max_length[r, c])
@@ -1352,8 +1356,8 @@ class RidgeDetector:
                 for direction in [-1, 1]:
                     _row = r + direction * line[:, 0]
                     _col = c + direction * line[:, 1]
-                    y = LinesUtil.BR(_row, height)
-                    x = LinesUtil.BC(_col, width)
+                    y = LinesUtil.BR(_row, height).astype(int)
+                    x = LinesUtil.BC(_col, width).astype(int)
                     mask = (
                         (-eigvals[y, x, 0] > 0.0)
                         & (np.abs(pp1[y, x]) <= 0.5)
